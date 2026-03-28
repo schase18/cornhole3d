@@ -1,9 +1,12 @@
 import { Injectable, NgZone, inject } from '@angular/core';
 import '@babylonjs/core/Physics/joinedPhysicsEngineComponent';
+/** Side-effect: registers Scene.createPickingRay / Ray extensions used by aimPointOnGround */
+import '@babylonjs/core/Culling/ray';
 import { Engine } from '@babylonjs/core/Engines/engine';
 import { Scene } from '@babylonjs/core/scene';
-import { Vector3 } from '@babylonjs/core/Maths/math.vector';
+import { Vector3, Matrix } from '@babylonjs/core/Maths/math.vector';
 import { Color3 } from '@babylonjs/core/Maths/math.color';
+import { Plane } from '@babylonjs/core/Maths/math.plane';
 import { UniversalCamera } from '@babylonjs/core/Cameras/universalCamera';
 import { HemisphericLight } from '@babylonjs/core/Lights/hemisphericLight';
 import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder';
@@ -11,15 +14,17 @@ import { Mesh } from '@babylonjs/core/Meshes/mesh';
 import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial';
 import { PhysicsImpostor } from '@babylonjs/core/Physics/v1/physicsImpostor';
 import { CannonJSPlugin } from '@babylonjs/core/Physics/v1/Plugins/cannonJSPlugin';
-import { PointerEventTypes } from '@babylonjs/core/Events/pointerEvents';
 import * as CANNON from 'cannon-es';
-import { CORNHOLE } from './cornhole-constants';
+import { CORNHOLE, throwLineY } from './cornhole-constants';
 import { GameStateService, ThrowResult } from './game-state.service';
 
 const HOLE_WORLD = {
   x: 0,
   z: CORNHOLE.boardWorld.z + CORNHOLE.board.holeCenterZLocal,
 };
+
+/** Ground plane y=0 — mesh picking often hits the bag/board first; aim uses this plane instead. */
+const GROUND_PLANE = Plane.FromPositionAndNormal(new Vector3(0, 0, 0), new Vector3(0, 1, 0));
 
 @Injectable({ providedIn: 'root' })
 export class CornholeSceneService {
@@ -31,6 +36,9 @@ export class CornholeSceneService {
   private dragStart = new Vector3();
   private evaluating = false;
   private settledHandled = false;
+  private throwStartMs = 0;
+  private canvas: HTMLCanvasElement | null = null;
+  private detachCanvasPointers: (() => void) | null = null;
 
   private readonly zone = inject(NgZone);
   private readonly gameState = inject(GameStateService);
@@ -65,13 +73,48 @@ export class CornholeSceneService {
 
     scene.onAfterPhysicsObservable.add(() => this.checkBagSettled());
 
-    scene.onPointerObservable.add((evt) => {
-      if (evt.type === PointerEventTypes.POINTERDOWN) {
-        this.onPointerDown(scene);
-      } else if (evt.type === PointerEventTypes.POINTERUP) {
-        this.onPointerUp(scene);
+    this.canvas = canvas;
+    canvas.tabIndex = 1;
+    canvas.style.cursor = 'crosshair';
+
+    const onDown = (e: PointerEvent) => {
+      if (e.button !== 0) {
+        return;
       }
-    });
+      e.preventDefault();
+      try {
+        canvas.setPointerCapture(e.pointerId);
+      } catch {
+        /* already captured or unsupported */
+      }
+      const rect = canvas.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      this.onPointerDown(scene, x, y);
+    };
+    const onUp = (e: PointerEvent) => {
+      if (e.button !== 0) {
+        return;
+      }
+      e.preventDefault();
+      try {
+        canvas.releasePointerCapture(e.pointerId);
+      } catch {
+        /* no capture */
+      }
+      const rect = canvas.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      this.onPointerUp(scene, x, y);
+    };
+    canvas.addEventListener('pointerdown', onDown, { passive: false });
+    canvas.addEventListener('pointerup', onUp, { passive: false });
+    canvas.addEventListener('pointercancel', onUp, { passive: false });
+    this.detachCanvasPointers = () => {
+      canvas.removeEventListener('pointerdown', onDown);
+      canvas.removeEventListener('pointerup', onUp);
+      canvas.removeEventListener('pointercancel', onUp);
+    };
 
     this.zone.runOutsideAngular(() => {
       engine.runRenderLoop(() => {
@@ -83,9 +126,14 @@ export class CornholeSceneService {
       engine.resize();
     });
     this.resizeObserver.observe(canvas);
+    engine.resize();
+    requestAnimationFrame(() => engine.resize());
   }
 
   dispose(): void {
+    this.detachCanvasPointers?.();
+    this.detachCanvasPointers = null;
+    this.canvas = null;
     this.resizeObserver?.disconnect();
     this.resizeObserver = null;
     if (this.scene) {
@@ -172,8 +220,12 @@ export class CornholeSceneService {
   }
 
   private createBag(scene: Scene): void {
-    const s = CORNHOLE.bag.sizeM;
-    const bag = MeshBuilder.CreateBox('bag', { width: s * 0.85, height: s * 0.35, depth: s }, scene);
+    const { widthM, depthM, thicknessM, massKg } = CORNHOLE.bag;
+    const bag = MeshBuilder.CreateBox(
+      'bag',
+      { width: widthM, height: thicknessM, depth: depthM },
+      scene,
+    );
     this.bag = bag;
     const mat = new StandardMaterial('bagMat', scene);
     mat.diffuseColor = new Color3(0.85, 0.12, 0.12);
@@ -184,9 +236,13 @@ export class CornholeSceneService {
       bag,
       PhysicsImpostor.BoxImpostor,
       {
-        mass: CORNHOLE.bag.mass,
-        friction: 0.85,
-        restitution: 0.05,
+        mass: massKg,
+        friction: 0.75,
+        restitution: 0.08,
+        nativeOptions: {
+          linearDamping: 0.15,
+          angularDamping: 0.35,
+        },
       },
       scene,
     );
@@ -196,13 +252,13 @@ export class CornholeSceneService {
     if (!this.bag) {
       return;
     }
-    const { x, y, z } = CORNHOLE.throwLine;
-    this.bag.position.set(x, y, z);
+    const { x, z } = CORNHOLE.throwLine;
+    this.bag.position.set(x, throwLineY(), z);
     this.bag.rotationQuaternion = null;
     this.bag.rotation.set(0, 0, 0);
     const imp = this.bag.physicsImpostor;
     if (imp) {
-      imp.setMass(CORNHOLE.bag.mass);
+      imp.setMass(CORNHOLE.bag.massKg);
       imp.setLinearVelocity(Vector3.Zero());
       imp.setAngularVelocity(Vector3.Zero());
       imp.sleep();
@@ -211,39 +267,56 @@ export class CornholeSceneService {
     this.evaluating = false;
   }
 
-  private onPointerDown(scene: Scene): void {
+  /**
+   * Aim point on the lawn (y=0) from canvas coordinates.
+   * Uses a ray vs plane so the bag/board in front of the ground do not block aiming.
+   */
+  private aimPointOnGround(scene: Scene, canvasX: number, canvasY: number): Vector3 | null {
+    const camera = scene.activeCamera;
+    if (!camera) {
+      return null;
+    }
+    const ray = scene.createPickingRay(canvasX, canvasY, Matrix.Identity(), camera);
+    const t = ray.intersectsPlane(GROUND_PLANE);
+    if (t === null || t < 0) {
+      return null;
+    }
+    return ray.origin.add(ray.direction.scale(t));
+  }
+
+  private onPointerDown(scene: Scene, canvasX: number, canvasY: number): void {
     const gs = this.gameState.snapshot;
     if (!gs.canThrow || gs.throwsRemaining <= 0) {
       return;
     }
-    const pick = scene.pick(scene.pointerX, scene.pointerY, (m) => m.name === 'ground');
-    if (!pick?.hit || !pick.pickedPoint) {
+    const hit = this.aimPointOnGround(scene, canvasX, canvasY);
+    if (!hit) {
       return;
     }
-    this.dragStart = pick.pickedPoint.clone();
+    this.dragStart = hit.clone();
+    let started = false;
+    this.zone.run(() => {
+      started = this.gameState.beginThrow();
+    });
+    if (!started) {
+      return;
+    }
     this.dragging = true;
-    this.zone.run(() => this.gameState.beginThrow());
   }
 
-  private onPointerUp(scene: Scene): void {
+  private onPointerUp(scene: Scene, canvasX: number, canvasY: number): void {
     if (!this.dragging || !this.bag?.physicsImpostor) {
       this.dragging = false;
       return;
     }
     this.dragging = false;
 
-    const pick = scene.pick(
-      scene.pointerX,
-      scene.pointerY,
-      (m) => m.name === 'ground',
-    );
+    const target = this.aimPointOnGround(scene, canvasX, canvasY);
 
-    if (!pick?.hit || !pick.pickedPoint) {
+    if (!target) {
       this.zone.run(() => this.gameState.cancelThrow());
       return;
     }
-
-    const target = pick.pickedPoint;
     const bagPos = this.bag.absolutePosition.clone();
     const dir = target.subtract(bagPos);
     dir.y = 0;
@@ -253,15 +326,21 @@ export class CornholeSceneService {
     }
     dir.normalize();
 
+    /** Cannon `applyImpulse` uses N·s; use I = m * Δv for realistic toss speeds (m/s). */
+    const mass = CORNHOLE.bag.massKg;
     const pull = Vector3.Distance(this.dragStart, target);
-    const power = Math.min(18, 6 + pull * 0.08);
+    const pullT = Math.min(1, pull / 5.5);
+    const horizSpeed = 2.2 + pullT * 5.5;
+    const upSpeed = 1.0 + pullT * 3.2;
+    const deltaV = dir.scale(horizSpeed).add(new Vector3(0, upSpeed, 0));
+    const impulse = deltaV.scale(mass);
 
-    const impulse = dir.scale(power).add(new Vector3(0, power * 0.35, 0));
     this.bag.physicsImpostor.wakeUp();
     this.bag.physicsImpostor.applyImpulse(impulse, this.bag.getAbsolutePosition());
 
     this.evaluating = true;
     this.settledHandled = false;
+    this.throwStartMs = performance.now();
     this.zone.run(() => {
       /* throw started */
     });
@@ -277,13 +356,21 @@ export class CornholeSceneService {
     if (!v) {
       return;
     }
-    const speed = v.length() + (av?.length() ?? 0) * 0.15;
-    if (speed > 0.12) {
+    const lin = v.length();
+    const ang = av?.length() ?? 0;
+    /** Do not fold angular speed into one threshold — a spinning bag stays "fast" forever. */
+    const calm = lin < 0.22 && ang < 2.2;
+    const p = this.bag.absolutePosition;
+    const elapsed = performance.now() - this.throwStartMs;
+    const outOfWorld = p.y < -0.8 || p.y > 30 || Math.abs(p.x) > 80 || Math.abs(p.z) > 80;
+    if (!calm && !outOfWorld && elapsed < 45000) {
       return;
     }
 
-    const p = this.bag.absolutePosition;
-    const result = this.classifyThrow(p);
+    let result = this.classifyThrow(p);
+    if (outOfWorld || elapsed >= 45000) {
+      result = 'miss';
+    }
     this.settledHandled = true;
     this.evaluating = false;
 
@@ -308,7 +395,7 @@ export class CornholeSceneService {
     const onBoardXZ =
       Math.abs(lx) <= halfW + 0.04 && lz >= -halfL - 0.04 && lz <= halfL + 0.04;
 
-    const nearGround = p.y < CORNHOLE.bag.sizeM * 0.4;
+    const nearGround = p.y < CORNHOLE.bag.thicknessM * 2.5;
     const inHoleRadius = holeDist < CORNHOLE.board.holeRadiusM + 0.02;
 
     if (nearGround && inHoleRadius) {

@@ -31,12 +31,14 @@ export class GameStateService {
     return this.stateSubject.value;
   }
 
-  beginThrow(): void {
+  /** @returns whether aim mode actually started */
+  beginThrow(): boolean {
     const s = this.stateSubject.value;
     if (!s.canThrow || s.throwsRemaining <= 0) {
-      return;
+      return false;
     }
     this.patch({ canThrow: false, lastMessage: 'Aiming…' });
+    return true;
   }
 
   cancelThrow(): void {
