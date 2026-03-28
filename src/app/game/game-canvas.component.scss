@@ -1,0 +1,52 @@
+.game-shell {
+  position: relative;
+  width: 100%;
+  min-height: 100vh;
+  background: #0f1419;
+}
+
+.render-canvas {
+  display: block;
+  width: 100%;
+  height: 100vh;
+  outline: none;
+  touch-action: none;
+}
+
+.hud {
+  position: absolute;
+  left: 1rem;
+  top: 1rem;
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
+  background: rgba(15, 20, 25, 0.72);
+  color: #e8eef4;
+  font-family: system-ui, sans-serif;
+  font-size: 0.95rem;
+  max-width: min(22rem, calc(100% - 2rem));
+  pointer-events: none;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.35);
+}
+
+.hud-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 1.5rem;
+  margin-bottom: 0.35rem;
+}
+
+.label {
+  opacity: 0.85;
+}
+
+.value {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.hint {
+  margin: 0.5rem 0 0;
+  font-size: 0.88rem;
+  line-height: 1.35;
+  opacity: 0.92;
+}

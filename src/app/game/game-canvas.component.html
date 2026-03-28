@@ -1,0 +1,20 @@
+<div class="game-shell">
+  <canvas #renderCanvas class="render-canvas" touch-action="none"></canvas>
+  @if (gameState.state$ | async; as state) {
+    <div class="hud" aria-live="polite">
+      <div class="hud-row">
+        <span class="label">Score</span>
+        <span class="value">{{ state.totalScore }}</span>
+      </div>
+      <div class="hud-row">
+        <span class="label">Bags left</span>
+        <span class="value">{{ state.throwsRemaining }}</span>
+      </div>
+      <div class="hud-row">
+        <span class="label">Round</span>
+        <span class="value">{{ state.round }}</span>
+      </div>
+      <p class="hint">{{ state.lastMessage }}</p>
+    </div>
+  }
+</div>

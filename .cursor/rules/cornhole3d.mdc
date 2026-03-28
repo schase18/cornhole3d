@@ -1,0 +1,11 @@
+---
+description: Cornhole 3D — Angular + Babylon boundaries
+globs: src/app/game/**/*
+---
+
+# Game code
+
+- Put Babylon `Engine` / `Scene` setup only in `CornholeSceneService` (or future dedicated engine classes under `game/`). Do not create WebGL contexts from arbitrary components.
+- Always dispose Babylon resources when the host component is destroyed (`dispose()` on the service).
+- Scoring and round rules belong in `GameStateService`; the scene service should call into it only after physics settle, wrapped in `NgZone.run` when updating UI-facing state.
+- Prefer `PhysicsImpostor` with Cannon for static colliders (mass 0) and the bag; avoid adding physics bodies outside the `game/` folder without a clear reason.
