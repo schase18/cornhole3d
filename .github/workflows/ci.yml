@@ -15,8 +15,12 @@ jobs:
         with:
           node-version: "20"
           cache: npm
+      - uses: browser-actions/setup-chrome@v2
+        id: setup-chrome
       - run: npm ci
       - run: npm run lint
       - run: npm run build
       - name: Unit tests
+        env:
+          CHROME_BIN: ${{ steps.setup-chrome.outputs.chrome-path }}
         run: npm test -- --no-watch --no-progress --browsers=ChromeHeadless
