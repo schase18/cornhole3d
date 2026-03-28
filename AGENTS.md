@@ -26,3 +26,13 @@ Angular 19 (standalone) shell with a Babylon.js + Cannon physics scene for a sin
 ## Secrets
 
 None required for this client-only app. Do not commit API keys or `.env` files with secrets.
+
+## GitHub
+
+Create an empty repository on GitHub, then from this folder:
+
+`git remote add origin https://github.com/<user>/<repo>.git`
+
+`git push -u origin main`
+
+Replace local `user.name` / `user.email` if you prefer your Git identity over the repo-only placeholder used for the initial commit.
