@@ -80,7 +80,16 @@ export class GameStateService {
       round,
       lastResult: result,
       lastMessage,
+      /** Scene resets the bag after a short delay; re-enabled via prepareNextThrow(). */
+      canThrow: false,
+    });
+  }
+
+  /** Call after the bag is moved back to the throw line so the player can throw again. */
+  prepareNextThrow(): void {
+    this.patch({
       canThrow: true,
+      lastMessage: 'Drag on the lawn, release to throw.',
     });
   }
 

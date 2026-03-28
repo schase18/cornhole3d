@@ -16,6 +16,8 @@ export const CORNHOLE = {
     thicknessM: 2 * 0.0254,
     massKg: 0.45359237, // 1 lb
   },
+  /** Thin physics slab on the deck top (m); invisible colliders only. */
+  deckColliderThicknessM: 0.018,
   ground: {
     sizeM: 40,
   },
