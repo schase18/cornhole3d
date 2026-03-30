@@ -25,7 +25,7 @@ export class GameCanvasComponent implements AfterViewInit, OnDestroy {
   readonly gameState = inject(GameStateService);
 
   ngAfterViewInit(): void {
-    this.scene.init(this.renderCanvas.nativeElement);
+    void this.scene.init(this.renderCanvas.nativeElement);
   }
 
   ngOnDestroy(): void {

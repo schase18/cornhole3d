@@ -20,7 +20,6 @@
     "@angular/router": "^19.2.0",
     "@babylonjs/core": "^9.0.0",
     "@babylonjs/loaders": "^9.0.0",
-    "cannon-es": "^0.20.0",
     "rxjs": "~7.8.0",
     "tslib": "^2.3.0",
     "zone.js": "~0.15.0"

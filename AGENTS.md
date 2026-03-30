@@ -2,7 +2,7 @@
 
 ## What this is
 
-Angular 19 (standalone) shell with a Babylon.js + Cannon physics scene for a single-player cornhole practice mode. The 3D loop runs outside Angular’s zone; state updates (`GameStateService`) run inside `NgZone.run` when scoring settles.
+Angular 19 (standalone) shell with a Babylon.js + Ammo.js physics scene for a single-player cornhole practice mode. The bag uses an Ammo soft body (`PhysicsImpostor.SoftbodyImpostor`); ground and board use static rigid bodies. The browser loads `public/ammo.js` (Babylon CDN build) via `index.html` before the app bundle. The 3D loop runs outside Angular's zone; state updates (`GameStateService`) run inside `NgZone.run` when scoring settles.
 
 ## Commands
 
@@ -13,7 +13,7 @@ Angular 19 (standalone) shell with a Babylon.js + Cannon physics scene for a sin
 
 ## Where things live
 
-- `src/app/game/cornhole-scene.service.ts` — Babylon `Engine` / `Scene`, physics, board frame colliders, bag, pointer throw
+- `src/app/game/cornhole-scene.service.ts` — Babylon `Engine` / `Scene`, Ammo physics, board frame colliders, soft-body bag, pointer throw
 - `src/app/game/game-state.service.ts` — score, throws per round, round counter, HUD-facing messages
 - `src/app/game/game-canvas.component.*` — `<canvas>` host, lifecycle `init`/`dispose` for the scene service
 - `src/app/game/cornhole-constants.ts` — board/bag dimensions in meters

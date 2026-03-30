@@ -9,15 +9,15 @@ export const CORNHOLE = {
     /** Local +Z is toward the back edge; board spans [-length/2, +length/2]. */
     holeCenterZLocal: 0.6096 - 0.2286, // 9 in from back
   },
-  /** Regulation cornhole bag: 6" × 6" × ~2", 1 lb (Cannon uses SI: kg, m, N·s). */
+  /** Regulation cornhole bag: 6" × 6", ~0.75" thick when filled, 1 lb (SI: kg, m). */
   bag: {
     widthM: 6 * 0.0254,
     depthM: 6 * 0.0254,
-    thicknessM: 2 * 0.0254,
+    thicknessM: 0.75 * 0.0254,
     massKg: 0.45359237, // 1 lb
   },
-  /** Thin physics slab on the deck top (m); invisible colliders only. */
-  deckColliderThicknessM: 0.018,
+  /** Thick physics slab for reliable soft-body collision (m); invisible. */
+  deckColliderThicknessM: 0.25,
   ground: {
     sizeM: 40,
   },

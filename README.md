@@ -1,6 +1,6 @@
 # Cornhole 3D
 
-Single-player 3D cornhole practice in the browser: Angular 19 + Babylon.js + Cannon physics.
+Single-player 3D cornhole practice in the browser: Angular 19 + Babylon.js + Ammo.js physics (soft-body bag).
 
 **Architecture and file map:** see [AGENTS.md](AGENTS.md).
 
