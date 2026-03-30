@@ -145,6 +145,7 @@ export class CornholeSceneService {
 
     scene.onAfterPhysicsObservable.add(() => {
       this.enforceCollisions();
+      this.preserveFlightSpin();
       this.checkBagSettled();
     });
 
@@ -1018,6 +1019,35 @@ export class CornholeSceneService {
     body.activate(true);
   }
 
+  /**
+   * Undo the effect of kDP damping on the rotational (spin) component of
+   * node velocities while the bag is in free flight.  Linear (COM) velocity
+   * stays damped so the trajectory is unchanged from the original tuning.
+   */
+  private preserveFlightSpin(): void {
+    if (!this.evaluating || this.firstContactMs !== 0) return;
+    const nodes = this.softNodes();
+    if (!nodes) return;
+    const count = nodes.size();
+    if (count === 0) return;
+
+    let svx = 0, svy = 0, svz = 0;
+    for (let i = 0; i < count; i++) {
+      const vel = nodes.at(i).get_m_v();
+      svx += vel.x(); svy += vel.y(); svz += vel.z();
+    }
+    const inv = 1 / count;
+    const comVx = svx * inv, comVy = svy * inv, comVz = svz * inv;
+
+    const undamp = 1 / (1 - 0.05);
+    for (let i = 0; i < count; i++) {
+      const vel = nodes.at(i).get_m_v();
+      vel.setX(comVx + (vel.x() - comVx) * undamp);
+      vel.setY(comVy + (vel.y() - comVy) * undamp);
+      vel.setZ(comVz + (vel.z() - comVz) * undamp);
+    }
+  }
+
   /** Motion metrics from soft-body node velocities (no getLinearVelocity on btSoftBody). */
   private getSoftMotion(): { lin: number; ang: number } {
     const nodes = this.softNodes();
@@ -1333,6 +1363,28 @@ export class CornholeSceneService {
 
     if (touched && this.firstContactMs === 0 && this.evaluating) {
       this.firstContactMs = performance.now();
+      this.killBagSpin(nodes, count);
+    }
+  }
+
+  /**
+   * Remove the rotational velocity component from all soft-body nodes,
+   * keeping only the post-friction COM velocity.  Called once on first
+   * contact so preserved flight spin doesn't cause lateral drift.
+   */
+  private killBagSpin(nodes: AmmoNodeArray, count: number): void {
+    let svx = 0, svy = 0, svz = 0;
+    for (let i = 0; i < count; i++) {
+      const vel = nodes.at(i).get_m_v();
+      svx += vel.x(); svy += vel.y(); svz += vel.z();
+    }
+    const inv = 1 / count;
+    const cvx = svx * inv, cvy = svy * inv, cvz = svz * inv;
+    for (let i = 0; i < count; i++) {
+      const vel = nodes.at(i).get_m_v();
+      vel.setX(cvx);
+      vel.setY(cvy);
+      vel.setZ(cvz);
     }
   }
 
