@@ -621,11 +621,12 @@ export class CornholeSceneService {
 
     const pull = Vector3.Distance(this.dragStart, target);
     const pullT = Math.min(1, pull / 4.2);
-    const horizSpeed = 2.1 + pullT * 1.0;
-    const upSpeed = 5.5 + pullT * 1.5;
+    const horizSpeed = 4.5 + pullT * 3.5;
+    const upSpeed = 4.0 + pullT * 2.0;
     const deltaV = dir.scale(horizSpeed).add(new Vector3(0, upSpeed, 0));
 
-    const spinY = 0.8 + pullT * 1.5;
+    const RPM = 200;
+    const spinY = RPM * (2 * Math.PI) / 60;
     this.applySoftBodyVelocity(deltaV, spinY);
 
     this.evaluating = true;
