@@ -12,6 +12,7 @@ import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder';
 import { Mesh } from '@babylonjs/core/Meshes/mesh';
 import { TransformNode } from '@babylonjs/core/Meshes/transformNode';
 import { CSG } from '@babylonjs/core/Meshes/csg';
+import { CreateSegmentedBoxVertexData } from '@babylonjs/core/Meshes/Builders/boxBuilder';
 import { VertexBuffer } from '@babylonjs/core/Buffers/buffer';
 import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial';
 import { Texture } from '@babylonjs/core/Materials/Textures/texture';
@@ -78,6 +79,11 @@ export class CornholeSceneService {
   private readonly scratchNextTarget = new Vector3();
   private readonly scratchCamTarget = new Vector3();
   private readonly scratchBagCenter = new Vector3();
+
+  private flipFrom = Quaternion.Identity();
+  private flipTo = Quaternion.Identity();
+  private flipStartMs = 0;
+  private readonly FLIP_DURATION_MS = 350;
 
   private readonly zone = inject(NgZone);
   private readonly gameState = inject(GameStateService);
@@ -161,6 +167,7 @@ export class CornholeSceneService {
           else if (this.dragging) this.updateAimCamera();
           else this.updateIdleCamera();
         }
+        this.tickFlipAnimation();
         scene.render();
       });
     });
@@ -644,13 +651,13 @@ export class CornholeSceneService {
    */
   private buildBagMesh(scene: Scene): void {
     const { widthM, depthM, thicknessM } = CORNHOLE.bag;
-    const bag = MeshBuilder.CreateSphere('bag', {
-      segments: 14,
-      diameterX: widthM,
-      diameterY: thicknessM,
-      diameterZ: depthM,
-      updatable: true,
-    }, scene);
+    const bag = new Mesh('bag', scene);
+    CreateSegmentedBoxVertexData({
+      width: widthM,
+      height: thicknessM,
+      depth: depthM,
+      segments: 10,
+    }).applyToMesh(bag, true);
 
     const rXZ = 0.5 * 0.0254;
     const rY = 0.004;
@@ -708,16 +715,27 @@ export class CornholeSceneService {
     const { x, z } = CORNHOLE.throwLine;
     bag.position.set(x, throwLineY(), z);
     bag.rotationQuaternion = this.gameState.bagSide === 'fast'
-      ? Quaternion.FromEulerAngles(Math.PI, 0, 0)
+      ? Quaternion.FromEulerAngles(0, 0, Math.PI)
       : Quaternion.Identity();
     this.bag = bag;
   }
 
   flipBagToSide(): void {
     if (!this.bag || this.bag.physicsImpostor || this.evaluating || this.dragging) return;
-    this.bag.rotationQuaternion = this.gameState.bagSide === 'fast'
-      ? Quaternion.FromEulerAngles(Math.PI, 0, 0)
+    const target = this.gameState.bagSide === 'fast'
+      ? Quaternion.FromEulerAngles(0, 0, Math.PI)
       : Quaternion.Identity();
+    this.flipFrom = (this.bag.rotationQuaternion ?? Quaternion.Identity()).clone();
+    this.flipTo = target;
+    this.flipStartMs = performance.now();
+  }
+
+  private tickFlipAnimation(): void {
+    if (!this.flipStartMs || !this.bag || this.bag.physicsImpostor) return;
+    const t = Math.min(1, (performance.now() - this.flipStartMs) / this.FLIP_DURATION_MS);
+    const eased = t * t * (3 - 2 * t);
+    Quaternion.SlerpToRef(this.flipFrom, this.flipTo, eased, this.bag.rotationQuaternion!);
+    if (t >= 1) this.flipStartMs = 0;
   }
 
   private createBagTexture(scene: Scene): DynamicTexture {
