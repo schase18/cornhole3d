@@ -110,6 +110,45 @@
   }
 }
 
+.speed-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-top: 0.45rem;
+  pointer-events: auto;
+}
+
+.speed-label {
+  font-size: 0.82rem;
+  opacity: 0.85;
+  flex-shrink: 0;
+}
+
+.speed-select {
+  flex: 1;
+  min-width: 0;
+  max-width: 5.5rem;
+  padding: 0.35rem 0.5rem;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.08);
+  color: #e8eef4;
+  font-size: 0.82rem;
+  font-family: inherit;
+  cursor: pointer;
+  outline: none;
+
+  &:focus {
+    border-color: rgba(255, 255, 255, 0.4);
+  }
+
+  option {
+    background: #1a2229;
+    color: #e8eef4;
+  }
+}
+
 .loft-control {
   margin-top: 0.6rem;
   pointer-events: auto;

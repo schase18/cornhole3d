@@ -24,6 +24,8 @@ export class GameCanvasComponent implements AfterViewInit, OnDestroy {
   private readonly scene = inject(CornholeSceneService);
   readonly gameState = inject(GameStateService);
 
+  readonly speedOptions = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] as const;
+
   ngAfterViewInit(): void {
     void this.scene.init(this.renderCanvas.nativeElement);
   }
@@ -35,6 +37,14 @@ export class GameCanvasComponent implements AfterViewInit, OnDestroy {
 
   setLoft(event: Event): void {
     this.gameState.loftT = +(event.target as HTMLInputElement).value;
+  }
+
+  setStickSpeed(event: Event): void {
+    this.gameState.stickSpeed = +(event.target as HTMLSelectElement).value;
+  }
+
+  setSlickSpeed(event: Event): void {
+    this.gameState.slickSpeed = +(event.target as HTMLSelectElement).value;
   }
 
   ngOnDestroy(): void {

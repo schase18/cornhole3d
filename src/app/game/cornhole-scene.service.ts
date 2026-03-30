@@ -755,7 +755,7 @@ export class CornholeSceneService {
 
     const { x, z } = CORNHOLE.throwLine;
     bag.position.set(x, throwLineY(), z);
-    bag.rotationQuaternion = this.gameState.bagSide === 'fast'
+    bag.rotationQuaternion = this.gameState.bagSide === 'slick'
       ? Quaternion.FromEulerAngles(0, 0, Math.PI)
       : Quaternion.Identity();
     this.bag = bag;
@@ -763,7 +763,7 @@ export class CornholeSceneService {
 
   flipBagToSide(): void {
     if (!this.bag || this.bag.physicsImpostor || this.evaluating || this.dragging) return;
-    const target = this.gameState.bagSide === 'fast'
+    const target = this.gameState.bagSide === 'slick'
       ? Quaternion.FromEulerAngles(0, 0, Math.PI)
       : Quaternion.Identity();
     this.flipFrom = (this.bag.rotationQuaternion ?? Quaternion.Identity()).clone();
@@ -1347,6 +1347,18 @@ export class CornholeSceneService {
   }
 
   /**
+   * Tangential velocity retention per friction step (1 = no friction).
+   * Stick / slick speed 1–10 tune slide on the corresponding face.
+   */
+  private slideDampForBagSide(): number {
+    const t = (n: number) => Math.max(0, Math.min(1, (n - 1) / 9));
+    if (this.gameState.bagSide === 'stick') {
+      return 0.4 + t(this.gameState.stickSpeed) * 0.22;
+    }
+    return 0.58 + t(this.gameState.slickSpeed) * 0.32;
+  }
+
+  /**
    * Manual collision enforcement — runs every physics step.
    * The Babylon CDN Ammo.js build doesn't reliably resolve soft-body vs
    * rigid-body contacts, so we project penetrating nodes back onto
@@ -1371,7 +1383,7 @@ export class CornholeSceneService {
     const cosT = Math.cos(CORNHOLE.boardTiltRad);
     const holeZAmmo = -(CORNHOLE.boardWorld.z + CORNHOLE.board.holeCenterZLocal);
     const holeR2 = CORNHOLE.board.holeRadiusM * CORNHOLE.board.holeRadiusM;
-    const SLIDE_DAMP = 0.55;
+    const SLIDE_DAMP = this.slideDampForBagSide();
     const STATIC_FRICTION_SPEED = 0.5;
     const POST_CONTACT_MAX_UP_VEL = 0.4;
     const BAG_BOUNCE_MAX_VEL = 1.73;

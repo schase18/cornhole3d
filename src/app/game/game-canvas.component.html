@@ -32,11 +32,33 @@
       <p class="hint">{{ state.lastMessage }}</p>
       <div class="side-toggle">
         <button
-          [class.active]="gameState.bagSide === 'slow'"
-          (click)="setBagSide('slow')">Slow Side</button>
+          [class.active]="gameState.bagSide === 'stick'"
+          (click)="setBagSide('stick')">Stick Side</button>
         <button
-          [class.active]="gameState.bagSide === 'fast'"
-          (click)="setBagSide('fast')">Fast Side</button>
+          [class.active]="gameState.bagSide === 'slick'"
+          (click)="setBagSide('slick')">Slick Side</button>
+      </div>
+      <div class="speed-row">
+        <label class="speed-label" for="stickSpeed">Stick Speed</label>
+        <select
+          id="stickSpeed"
+          class="speed-select"
+          (change)="setStickSpeed($event)">
+          @for (n of speedOptions; track n) {
+            <option [value]="n" [selected]="gameState.stickSpeed === n">{{ n }}</option>
+          }
+        </select>
+      </div>
+      <div class="speed-row">
+        <label class="speed-label" for="slickSpeed">Slick Speed</label>
+        <select
+          id="slickSpeed"
+          class="speed-select"
+          (change)="setSlickSpeed($event)">
+          @for (n of speedOptions; track n) {
+            <option [value]="n" [selected]="gameState.slickSpeed === n">{{ n }}</option>
+          }
+        </select>
       </div>
       <div class="loft-control">
         <label class="loft-label">Loft</label>

@@ -2,7 +2,7 @@ import { Injectable } from '@angular/core';
 import { BehaviorSubject } from 'rxjs';
 
 export type ThrowResult = 'in_hole' | 'on_board' | 'miss';
-export type BagSide = 'slow' | 'fast';
+export type BagSide = 'stick' | 'slick';
 
 export interface GameStateSnapshot {
   totalScore: number;
@@ -34,7 +34,13 @@ export class GameStateService {
 
   readonly state$ = this.stateSubject.asObservable();
 
-  bagSide: BagSide = 'slow';
+  bagSide: BagSide = 'stick';
+
+  /** 1–10: how the stick side slides (higher = more run). */
+  stickSpeed = 6;
+
+  /** 1–10: how the slick side slides (higher = more run). */
+  slickSpeed = 8;
 
   /** 0 = Low (6 ft peak), 1 = High (16 ft peak). */
   loftT = 0.5;
