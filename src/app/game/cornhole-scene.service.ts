@@ -10,8 +10,10 @@ import { UniversalCamera } from '@babylonjs/core/Cameras/universalCamera';
 import { HemisphericLight } from '@babylonjs/core/Lights/hemisphericLight';
 import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder';
 import { Mesh } from '@babylonjs/core/Meshes/mesh';
+import { CSG } from '@babylonjs/core/Meshes/csg';
 import { VertexBuffer } from '@babylonjs/core/Buffers/buffer';
 import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial';
+import { Texture } from '@babylonjs/core/Materials/Textures/texture';
 import { PhysicsImpostor } from '@babylonjs/core/Physics/v1/physicsImpostor';
 import { AmmoJSPlugin } from '@babylonjs/core/Physics/v1/Plugins/ammoJSPlugin';
 import { CORNHOLE, throwLineY } from './cornhole-constants';
@@ -203,41 +205,61 @@ export class CornholeSceneService {
   }
 
   private createBoard(scene: Scene): void {
-    const { widthM, lengthM, thicknessM, holeCenterZLocal } = CORNHOLE.board;
+    const { widthM, lengthM, thicknessM, holeCenterZLocal, holeRadiusM } = CORNHOLE.board;
     const { x: bx, y: by, z: bz } = CORNHOLE.boardWorld;
 
-    const deck = MeshBuilder.CreateBox('deckVis',
+    const deckBox = MeshBuilder.CreateBox('deckBox',
       { width: widthM, height: thicknessM, depth: lengthM }, scene);
-    deck.position.set(bx, by, bz);
+    deckBox.position.set(bx, by, bz);
+
+    const holeCyl = MeshBuilder.CreateCylinder('holeCyl', {
+      diameter: holeRadiusM * 2,
+      height: thicknessM + 0.02,
+      tessellation: 32,
+    }, scene);
+    holeCyl.position.set(bx, by, bz + holeCenterZLocal);
+
+    const deckCSG = CSG.FromMesh(deckBox);
+    const holeCSG = CSG.FromMesh(holeCyl);
+    const resultCSG = deckCSG.subtract(holeCSG);
+    deckBox.dispose();
+    holeCyl.dispose();
+
+    const deck = resultCSG.toMesh('deck', null, scene, false);
     const wood = new StandardMaterial('wood', scene);
     wood.diffuseColor = new Color3(0.55, 0.35, 0.2);
     wood.specularColor = new Color3(0.15, 0.1, 0.05);
     deck.material = wood;
 
+    const rim = MeshBuilder.CreateTorus('holeRim', {
+      diameter: holeRadiusM * 2,
+      thickness: 0.006,
+      tessellation: 32,
+    }, scene);
+    rim.position.set(bx, by + thicknessM / 2, bz + holeCenterZLocal);
+    const rimMat = new StandardMaterial('rimMat', scene);
+    rimMat.diffuseColor = new Color3(0.35, 0.2, 0.1);
+    rimMat.specularColor = Color3.Black();
+    rim.material = rimMat;
+
     const halfL = lengthM / 2;
     const halfW = widthM / 2;
-    const zh = holeCenterZLocal;
-    const R = CORNHOLE.board.holeRadiusM;
+    const R = holeRadiusM;
 
-    const frameMat = wood.clone('frameMatClone');
-    const fh = 0.024;
-    const frameY = by + thicknessM / 2 + fh / 2;
+    const logoLocalZ = (-halfL + holeCenterZLocal) / 2;
+    const logoSize = 0.30;
+    const logo = MeshBuilder.CreatePlane('logo', { width: logoSize, height: logoSize }, scene);
+    logo.position.set(bx, by + thicknessM / 2 + 0.001, bz + logoLocalZ);
+    logo.rotation.x = Math.PI / 2;
+    const logoMat = new StandardMaterial('logoMat', scene);
+    logoMat.diffuseTexture = new Texture('irish-rose-logo.png', scene);
+    logoMat.diffuseTexture.hasAlpha = true;
+    logoMat.useAlphaFromDiffuseTexture = true;
+    logoMat.specularColor = Color3.Black();
+    logoMat.backFaceCulling = false;
+    logo.material = logoMat;
 
-    const addFrame = (cx: number, cz: number, w: number, d: number) => {
-      const m = MeshBuilder.CreateBox(`frame_${cx}_${cz}`,
-        { width: w, height: fh, depth: d }, scene);
-      m.position.set(bx + cx, frameY, bz + cz);
-      m.material = frameMat;
-      m.physicsImpostor = new PhysicsImpostor(m, PhysicsImpostor.BoxImpostor,
-        { mass: 0, friction: 0.65, restitution: 0.02 }, scene);
-    };
-
-    addFrame(0, (zh + R + halfL) / 2, widthM, halfL - (zh + R));
-    addFrame(0, (-halfL + zh - R) / 2, widthM, (zh - R) - -halfL);
-    addFrame((-halfW - R) / 2, zh, halfW - R, 2 * R);
-    addFrame((halfW + R) / 2, zh, halfW - R, 2 * R);
-
-    this.addDeckSurfaceColliders(scene, bx, by, bz, halfW, halfL, zh, R);
+    this.addDeckSurfaceColliders(scene, bx, by, bz, halfW, halfL, holeCenterZLocal, R);
   }
 
   private addDeckSurfaceColliders(
