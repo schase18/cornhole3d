@@ -22,7 +22,13 @@ import { DynamicTexture } from '@babylonjs/core/Materials/Textures/dynamicTextur
 import type { ICanvasRenderingContext } from '@babylonjs/core/Engines/ICanvas';
 import { PhysicsImpostor } from '@babylonjs/core/Physics/v1/physicsImpostor';
 import { AmmoJSPlugin } from '@babylonjs/core/Physics/v1/Plugins/ammoJSPlugin';
-import { CORNHOLE, throwLineY } from './cornhole-constants';
+import {
+  CORNHOLE,
+  MAX_THROW_HORIZ_SPEED_MPS,
+  PULL_DISTANCE_FOR_FULL_POWER_M,
+  THROW_RELEASE_ENERGY_MUL,
+  throwLineY,
+} from './cornhole-constants';
 import { GameStateService, ThrowResult } from './game-state.service';
 
 const HOLE_WORLD = {
@@ -65,6 +71,7 @@ export class CornholeSceneService {
   private resizeObserver: ResizeObserver | null = null;
   private dragging = false;
   private dragStart = new Vector3();
+  private pointerTrail: { x: number; y: number; t: number }[] = [];
   private evaluating = false;
   private settledHandled = false;
   private throwStartMs = 0;
@@ -158,20 +165,34 @@ export class CornholeSceneService {
       e.preventDefault();
       try { canvas.setPointerCapture(e.pointerId); } catch { /* */ }
       const rect = canvas.getBoundingClientRect();
-      this.onPointerDown(scene, e.clientX - rect.left, e.clientY - rect.top);
+      this.onPointerDown(
+        scene,
+        e.clientX - rect.left,
+        e.clientY - rect.top,
+        e.clientX,
+        e.clientY,
+      );
+    };
+    const onMove = (e: PointerEvent) => {
+      if (!this.dragging) return;
+      this.pointerTrail.push({ x: e.clientX, y: e.clientY, t: performance.now() });
+      if (this.pointerTrail.length > 6) this.pointerTrail.shift();
     };
     const onUp = (e: PointerEvent) => {
       if (e.button !== 0) return;
       e.preventDefault();
       try { canvas.releasePointerCapture(e.pointerId); } catch { /* */ }
+      this.pointerTrail.push({ x: e.clientX, y: e.clientY, t: performance.now() });
       const rect = canvas.getBoundingClientRect();
       this.onPointerUp(scene, e.clientX - rect.left, e.clientY - rect.top);
     };
     canvas.addEventListener('pointerdown', onDown, { passive: false });
+    canvas.addEventListener('pointermove', onMove, { passive: true });
     canvas.addEventListener('pointerup', onUp, { passive: false });
     canvas.addEventListener('pointercancel', onUp, { passive: false });
     this.detachCanvasPointers = () => {
       canvas.removeEventListener('pointerdown', onDown);
+      canvas.removeEventListener('pointermove', onMove);
       canvas.removeEventListener('pointerup', onUp);
       canvas.removeEventListener('pointercancel', onUp);
     };
@@ -1164,12 +1185,62 @@ export class CornholeSceneService {
     return ray.origin.add(ray.direction.scale(t));
   }
 
-  private onPointerDown(scene: Scene, canvasX: number, canvasY: number): void {
+  /**
+   * Fallback when the picking ray points above the horizon and misses the
+   * ground plane.  Projects the ray's XZ direction far ahead at Y=0 so a
+   * drag-to-top-of-screen still produces a valid throw target.
+   */
+  private aimPointFarAhead(scene: Scene, canvasX: number, canvasY: number): Vector3 | null {
+    if (!this.camera) return null;
+    const ray = scene.createPickingRay(canvasX, canvasY, Matrix.Identity(), this.camera);
+    const dx = ray.direction.x;
+    const dz = ray.direction.z;
+    const hLen = Math.hypot(dx, dz);
+    if (hLen < 1e-8) return null;
+    const FAR = 50;
+    return new Vector3(
+      ray.origin.x + (dx / hLen) * FAR,
+      0,
+      ray.origin.z + (dz / hLen) * FAR,
+    );
+  }
+
+  /**
+   * Bonus energy from cursor speed at release (never below 1.0 — slow drags
+   * keep full base power; fast flicks add a small bonus, capped for range).
+   * Uses the last ~80 ms of screen-space motion for a stable speed read.
+   */
+  private releaseSpeedMultiplier(): number {
+    const trail = this.pointerTrail;
+    if (trail.length < 2) return 1;
+    const last = trail[trail.length - 1];
+    let ref = trail[0];
+    for (let i = trail.length - 2; i >= 0; i--) {
+      ref = trail[i];
+      if (last.t - ref.t >= 80) break;
+    }
+    const dt = last.t - ref.t;
+    if (dt < 1) return 1;
+    const speed = Math.hypot(last.x - ref.x, last.y - ref.y) / dt; // px/ms
+    const REF = 0.22; // ~220 px/s — typical deliberate drag
+    const bonus = Math.min(0.22, (speed / REF) * 0.14);
+    return 1 + bonus;
+  }
+
+  private onPointerDown(
+    scene: Scene,
+    canvasX: number,
+    canvasY: number,
+    clientX: number,
+    clientY: number,
+  ): void {
     const gs = this.gameState.snapshot;
     if (!gs.canThrow || gs.throwsRemaining <= 0) return;
     const hit = this.aimPointOnGround(scene, canvasX, canvasY);
     if (!hit) return;
     this.dragStart = hit.clone();
+    const t0 = performance.now();
+    this.pointerTrail = [{ x: clientX, y: clientY, t: t0 }];
     let started = false;
     this.zone.run(() => { started = this.gameState.beginThrow(); });
     if (!started) return;
@@ -1180,7 +1251,10 @@ export class CornholeSceneService {
     if (!this.dragging || !this.bag) { this.dragging = false; return; }
     this.dragging = false;
 
-    const target = this.aimPointOnGround(scene, canvasX, canvasY);
+    let target = this.aimPointOnGround(scene, canvasX, canvasY);
+    if (!target) {
+      target = this.aimPointFarAhead(scene, canvasX, canvasY);
+    }
     if (!target) {
       this.zone.run(() => this.gameState.cancelThrow());
       this.resetCameraToDefault();
@@ -1196,10 +1270,8 @@ export class CornholeSceneService {
      * Throw power (pullT from drag length) controls whether the bag
      * lands short, on, or past the board.
      *
-     * Projectile math (g = 9.81):
-     *   pullT=0.0 → lands ~0.3 m short of board front edge (weak toss)
-     *   pullT=0.5 → lands on board center
-     *   pullT=1.0 → lands ~1 m past board back edge (hard throw)
+     * pullT scales pull distance / PULL_DISTANCE_FOR_FULL_POWER_M (less sensitive).
+     * Horiz speed is capped so max-range tosses stay ~4 ft past the board back edge.
      */
     const toBoardX = CORNHOLE.boardWorld.x - bagPos.x;
     const toBoardZ = CORNHOLE.boardWorld.z - bagPos.z;
@@ -1213,10 +1285,20 @@ export class CornholeSceneService {
     dir.normalize();
 
     const pull = Vector3.Distance(this.dragStart, target);
-    const pullT = Math.min(1, pull / 4.2);
-    const horizSpeed = 16.0 + pullT * 9.0;
-    const upSpeed = 5.5 + pullT * 3.0;
-    const deltaV = dir.scale(horizSpeed).add(new Vector3(0, upSpeed, 0));
+    const pullT = Math.min(1, pull / PULL_DISTANCE_FOR_FULL_POWER_M);
+    const loftT = this.gameState.loftT;
+    const speedMul = this.releaseSpeedMultiplier();
+    let horizSpeed =
+      (16.0 + pullT * 7.5 + (1 - loftT) * 5.5) * speedMul;
+    horizSpeed = Math.min(horizSpeed, MAX_THROW_HORIZ_SPEED_MPS);
+    const LOFT_MIN_FT = 6;
+    const LOFT_MAX_FT = 16;
+    const peakM = (LOFT_MIN_FT + this.gameState.loftT * (LOFT_MAX_FT - LOFT_MIN_FT)) * 0.3048;
+    const highLoftEnergyMul = 1 + 0.07 * loftT;
+    const upSpeed =
+      Math.sqrt(2 * 9.81 * (peakM - throwLineY())) * speedMul * highLoftEnergyMul;
+    const e = THROW_RELEASE_ENERGY_MUL;
+    const deltaV = dir.scale(horizSpeed * e).add(new Vector3(0, upSpeed * e, 0));
 
     const RPM = 600;
     const spinY = -(RPM * (2 * Math.PI) / 60);

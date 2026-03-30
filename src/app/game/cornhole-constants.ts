@@ -43,3 +43,23 @@ export const CORNHOLE = {
 export function throwLineY(): number {
   return 0.9144; // 3 ft
 }
+
+/** World +Z of the board’s back edge (far from the throw line). */
+export function boardBackEdgeWorldZ(): number {
+  return CORNHOLE.boardWorld.z + CORNHOLE.board.lengthM * 0.5;
+}
+
+/** Throws are tuned so landing distance does not exceed this past the back edge (~4 ft). */
+export const MAX_PAST_BOARD_M = 4 * 0.3048;
+
+/**
+ * Max horizontal speed magnitude (m/s) after pull + loft + release-speed scaling.
+ * Works with `MAX_PAST_BOARD_M` so hard throws stay near the regulation “past board” limit.
+ */
+export const MAX_THROW_HORIZ_SPEED_MPS = 25.5;
+
+/** Ground distance (m) that must be dragged for full pull power — larger = less sensitive. */
+export const PULL_DISTANCE_FOR_FULL_POWER_M = 5.0;
+
+/** Slight boost to horizontal + upward velocity at mouse release. */
+export const THROW_RELEASE_ENERGY_MUL = 1.045;

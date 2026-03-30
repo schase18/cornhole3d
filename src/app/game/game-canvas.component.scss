@@ -109,3 +109,59 @@
     }
   }
 }
+
+.loft-control {
+  margin-top: 0.6rem;
+  pointer-events: auto;
+}
+
+.loft-label {
+  display: block;
+  font-size: 0.82rem;
+  opacity: 0.85;
+  margin-bottom: 0.25rem;
+}
+
+.loft-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.loft-tag {
+  font-size: 0.75rem;
+  opacity: 0.65;
+  flex-shrink: 0;
+  min-width: 2rem;
+  text-align: center;
+}
+
+.loft-slider {
+  flex: 1;
+  appearance: none;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.18);
+  outline: none;
+  cursor: pointer;
+
+  &::-webkit-slider-thumb {
+    appearance: none;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+    cursor: pointer;
+  }
+
+  &::-moz-range-thumb {
+    width: 14px;
+    height: 14px;
+    border: none;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+    cursor: pointer;
+  }
+}

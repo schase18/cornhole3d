@@ -33,6 +33,10 @@ export class GameCanvasComponent implements AfterViewInit, OnDestroy {
     this.scene.flipBagToSide();
   }
 
+  setLoft(event: Event): void {
+    this.gameState.loftT = +(event.target as HTMLInputElement).value;
+  }
+
   ngOnDestroy(): void {
     this.scene.dispose();
   }

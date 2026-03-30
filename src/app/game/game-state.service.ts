@@ -36,6 +36,9 @@ export class GameStateService {
 
   bagSide: BagSide = 'slow';
 
+  /** 0 = Low (6 ft peak), 1 = High (16 ft peak). */
+  loftT = 0.5;
+
   get snapshot(): GameStateSnapshot {
     return this.stateSubject.value;
   }
