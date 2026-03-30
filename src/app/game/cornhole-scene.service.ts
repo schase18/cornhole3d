@@ -882,7 +882,7 @@ export class CornholeSceneService {
         mass: CORNHOLE.bag.massKg,
         friction: 0.9,
         restitution: 0.01,
-        pressure: 8,
+        pressure: 6,
         stiffness: 0.85,
         damping: 0.05,
         velocityIterations: 8,
@@ -895,7 +895,7 @@ export class CornholeSceneService {
     if (body?.get_m_cfg) {
       const cfg = body.get_m_cfg();
       cfg.set_kCHR(1.0);
-      cfg.set_kKHR(0.8);
+      cfg.set_kKHR(1.0);
       cfg.set_kSHR(1.0);
     }
   }
@@ -1216,6 +1216,10 @@ export class CornholeSceneService {
     const cosT = Math.cos(CORNHOLE.boardTiltRad);
     const holeZAmmo = -(CORNHOLE.boardWorld.z + CORNHOLE.board.holeCenterZLocal);
     const holeR2 = CORNHOLE.board.holeRadiusM * CORNHOLE.board.holeRadiusM;
+    const SLIDE_DAMP = 0.55;
+    const STATIC_FRICTION_SPEED = 0.5;
+    const POST_CONTACT_MAX_UP_VEL = 0.4;
+    const BAG_BOUNCE_MAX_VEL = 1.73;
     let touched = false;
 
     for (let i = 0; i < count; i++) {
@@ -1227,8 +1231,7 @@ export class CornholeSceneService {
       if (py < 0) {
         pos.setY(0);
         vel.setY(0);
-        vel.setX(vel.x() * 0.4);
-        vel.setZ(vel.z() * 0.4);
+        this.applyFriction(vel, SLIDE_DAMP, STATIC_FRICTION_SPEED);
         touched = true;
       }
 
@@ -1242,15 +1245,63 @@ export class CornholeSceneService {
         if (hx * hx + hz * hz > holeR2) {
           pos.setY(surfY);
           vel.setY(0);
-          vel.setX(vel.x() * 0.4);
-          vel.setZ(vel.z() * 0.4);
+          this.applyFriction(vel, SLIDE_DAMP, STATIC_FRICTION_SPEED);
           touched = true;
+        }
+      }
+    }
+
+    /* ── Settled-bag collision ──────────────────────────────────────── */
+    for (const settled of this.settledBags) {
+      settled.refreshBoundingInfo();
+      const bb = settled.getBoundingInfo().boundingBox;
+      const sMinX = bb.minimumWorld.x;
+      const sMaxX = bb.maximumWorld.x;
+      const sMinZ = -bb.maximumWorld.z;
+      const sMaxZ = -bb.minimumWorld.z;
+      const sTopY = bb.maximumWorld.y;
+
+      for (let i = 0; i < count; i++) {
+        const node = nodes.at(i);
+        const pos = node.get_m_x();
+        const vel = node.get_m_v();
+        const px = pos.x(), py = pos.y(), pz = pos.z();
+
+        if (px >= sMinX && px <= sMaxX && pz >= sMinZ && pz <= sMaxZ
+            && py < sTopY && py > sTopY - 0.12) {
+          pos.setY(sTopY);
+          if (vel.y() < 0) vel.setY(0);
+          if (vel.y() > BAG_BOUNCE_MAX_VEL) vel.setY(BAG_BOUNCE_MAX_VEL);
+          this.applyFriction(vel, SLIDE_DAMP, STATIC_FRICTION_SPEED);
+          touched = true;
+        }
+      }
+    }
+
+    /* ── Post-contact upward-velocity clamp ────────────────────────── */
+    if (touched) {
+      for (let i = 0; i < count; i++) {
+        const vel = nodes.at(i).get_m_v();
+        if (vel.y() > POST_CONTACT_MAX_UP_VEL) {
+          vel.setY(POST_CONTACT_MAX_UP_VEL);
         }
       }
     }
 
     if (touched && this.firstContactMs === 0 && this.evaluating) {
       this.firstContactMs = performance.now();
+    }
+  }
+
+  /** Dynamic + static friction for a contacting soft-body node (XZ only). */
+  private applyFriction(vel: AmmoBtVec3, slideDamp: number, staticSpeed: number): void {
+    const vx = vel.x(), vz = vel.z();
+    if (vx * vx + vz * vz < staticSpeed * staticSpeed) {
+      vel.setX(0);
+      vel.setZ(0);
+    } else {
+      vel.setX(vx * slideDamp);
+      vel.setZ(vz * slideDamp);
     }
   }
 

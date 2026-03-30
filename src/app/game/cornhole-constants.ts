@@ -23,15 +23,15 @@ export const CORNHOLE = {
   },
   /**
    * Board center world position.  The board is tilted so the front edge
-   * rests on the ground and the back-edge top is exactly 1 ft (0.3048 m).
+   * rests on the ground and the back-edge top is ~10 in (0.2517 m).
    */
   boardWorld: {
     x: 0,
-    y: 0.1524,
+    y: 0.1259,
     z: 8.2296, // 27 ft from throw line
   },
-  /** Tilt angle in radians (~13°).  Front edge on ground, back top at 1 ft. */
-  boardTiltRad: 0.2274,
+  /** Tilt angle in radians (~10.5°).  Front edge on ground, back top at ~10 in. */
+  boardTiltRad: 0.1833,
   /** Spawn / throw: bag center height ~hand release; -Z toward camera. */
   throwLine: {
     x: 0,
