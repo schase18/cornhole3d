@@ -14,6 +14,7 @@ import { CSG } from '@babylonjs/core/Meshes/csg';
 import { VertexBuffer } from '@babylonjs/core/Buffers/buffer';
 import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial';
 import { Texture } from '@babylonjs/core/Materials/Textures/texture';
+import { DynamicTexture } from '@babylonjs/core/Materials/Textures/dynamicTexture';
 import { PhysicsImpostor } from '@babylonjs/core/Physics/v1/physicsImpostor';
 import { AmmoJSPlugin } from '@babylonjs/core/Physics/v1/Plugins/ammoJSPlugin';
 import { CORNHOLE, throwLineY } from './cornhole-constants';
@@ -227,8 +228,8 @@ export class CornholeSceneService {
 
     const deck = resultCSG.toMesh('deck', null, scene, false);
     const wood = new StandardMaterial('wood', scene);
-    wood.diffuseColor = new Color3(0.55, 0.35, 0.2);
-    wood.specularColor = new Color3(0.15, 0.1, 0.05);
+    wood.diffuseTexture = this.createWoodGrainTexture(scene);
+    wood.specularColor = new Color3(0.12, 0.10, 0.06);
     deck.material = wood;
 
     const rim = MeshBuilder.CreateTorus('holeRim', {
@@ -238,7 +239,7 @@ export class CornholeSceneService {
     }, scene);
     rim.position.set(bx, by + thicknessM / 2, bz + holeCenterZLocal);
     const rimMat = new StandardMaterial('rimMat', scene);
-    rimMat.diffuseColor = new Color3(0.35, 0.2, 0.1);
+    rimMat.diffuseColor = new Color3(0.6, 0.45, 0.3);
     rimMat.specularColor = Color3.Black();
     rim.material = rimMat;
 
@@ -247,7 +248,7 @@ export class CornholeSceneService {
     const R = holeRadiusM;
 
     const logoLocalZ = (-halfL + holeCenterZLocal) / 2;
-    const logoSize = 0.30;
+    const logoSize = 0.45;
     const logo = MeshBuilder.CreatePlane('logo', { width: logoSize, height: logoSize }, scene);
     logo.position.set(bx, by + thicknessM / 2 + 0.001, bz + logoLocalZ);
     logo.rotation.x = Math.PI / 2;
@@ -260,6 +261,47 @@ export class CornholeSceneService {
     logo.material = logoMat;
 
     this.addDeckSurfaceColliders(scene, bx, by, bz, halfW, halfL, holeCenterZLocal, R);
+  }
+
+  private createWoodGrainTexture(scene: Scene): DynamicTexture {
+    const size = 512;
+    const tex = new DynamicTexture('woodGrain', { width: size, height: size }, scene, true);
+    const ctx = tex.getContext();
+
+    ctx.fillStyle = '#d2b48c';
+    ctx.fillRect(0, 0, size, size);
+
+    for (let y = 0; y < size; y++) {
+      const wave = Math.sin(y * 0.04) * 8 + Math.sin(y * 0.11) * 4;
+      const base = 190 + wave;
+      const r = Math.min(255, base + (Math.random() * 14 - 7));
+      const g = Math.min(255, base - 20 + (Math.random() * 10 - 5));
+      const b = Math.min(255, base - 55 + (Math.random() * 8 - 4));
+      ctx.fillStyle = `rgb(${r},${g},${b})`;
+      ctx.fillRect(0, y, size, 1);
+    }
+
+    for (let i = 0; i < 40; i++) {
+      const y = Math.random() * size;
+      const h = 1 + Math.random() * 4;
+      ctx.fillStyle = `rgba(140,105,65,${0.12 + Math.random() * 0.18})`;
+      ctx.fillRect(0, y, size, h);
+    }
+
+    for (let i = 0; i < 8; i++) {
+      const y = Math.random() * size;
+      ctx.strokeStyle = `rgba(120,90,50,${0.08 + Math.random() * 0.1})`;
+      ctx.lineWidth = 0.5;
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      for (let x = 0; x < size; x += 4) {
+        ctx.lineTo(x, y + Math.sin(x * 0.02 + i) * 3);
+      }
+      ctx.stroke();
+    }
+
+    tex.update();
+    return tex;
   }
 
   private addDeckSurfaceColliders(
