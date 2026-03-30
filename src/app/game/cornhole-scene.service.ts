@@ -4,17 +4,19 @@ import '@babylonjs/core/Culling/ray';
 import { Engine } from '@babylonjs/core/Engines/engine';
 import { Scene } from '@babylonjs/core/scene';
 import { Vector3, Matrix, Quaternion } from '@babylonjs/core/Maths/math.vector';
-import { Color3 } from '@babylonjs/core/Maths/math.color';
+import { Color3, Color4 } from '@babylonjs/core/Maths/math.color';
 import { Plane } from '@babylonjs/core/Maths/math.plane';
 import { UniversalCamera } from '@babylonjs/core/Cameras/universalCamera';
 import { HemisphericLight } from '@babylonjs/core/Lights/hemisphericLight';
 import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder';
 import { Mesh } from '@babylonjs/core/Meshes/mesh';
+import { TransformNode } from '@babylonjs/core/Meshes/transformNode';
 import { CSG } from '@babylonjs/core/Meshes/csg';
 import { VertexBuffer } from '@babylonjs/core/Buffers/buffer';
 import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial';
 import { Texture } from '@babylonjs/core/Materials/Textures/texture';
 import { DynamicTexture } from '@babylonjs/core/Materials/Textures/dynamicTexture';
+import type { ICanvasRenderingContext } from '@babylonjs/core/Engines/ICanvas';
 import { PhysicsImpostor } from '@babylonjs/core/Physics/v1/physicsImpostor';
 import { AmmoJSPlugin } from '@babylonjs/core/Physics/v1/Plugins/ammoJSPlugin';
 import { CORNHOLE, throwLineY } from './cornhole-constants';
@@ -108,11 +110,15 @@ export class CornholeSceneService {
     scene.activeCamera = camera;
     this.camera = camera;
 
+    scene.clearColor = new Color4(0.53, 0.77, 0.97, 1.0);
+
     const light = new HemisphericLight('hemi', new Vector3(0.2, 1, 0.3), scene);
     light.intensity = 0.95;
     light.groundColor = new Color3(0.35, 0.35, 0.4);
 
+    this.createSky(scene);
     this.createGround(scene);
+    this.createTreeline(scene);
     this.createBoard(scene);
     this.buildBagMesh(scene);
 
@@ -193,32 +199,304 @@ export class CornholeSceneService {
    *  Static geometry
    * ================================================================ */
 
+  private createSky(scene: Scene): void {
+    const dome = MeshBuilder.CreateSphere('skyDome', { diameter: 120, segments: 16 }, scene);
+    dome.isPickable = false;
+
+    const skyMat = new StandardMaterial('skyMat', scene);
+    const skyTex = new DynamicTexture('skyTex', { width: 512, height: 512 }, scene, true);
+    const ctx = skyTex.getContext();
+    const grad = ctx.createLinearGradient(0, 0, 0, 512);
+    grad.addColorStop(0, '#3a8ad8');
+    grad.addColorStop(0.45, '#7ec8f0');
+    grad.addColorStop(0.7, '#a8dcf5');
+    grad.addColorStop(1.0, '#d4ecfa');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, 512, 512);
+    skyTex.update();
+
+    skyMat.diffuseTexture = skyTex;
+    skyMat.emissiveTexture = skyTex;
+    skyMat.disableLighting = true;
+    skyMat.backFaceCulling = false;
+    skyMat.specularColor = Color3.Black();
+    dome.material = skyMat;
+
+    this.createClouds(scene);
+  }
+
+  private createClouds(scene: Scene): void {
+    const cloudTex = this.createCloudTexture(scene);
+
+    const placements: { x: number; y: number; z: number; w: number; h: number }[] = [
+      { x: -6,  y: 5.5, z: 25, w: 12, h: 3.5 },
+      { x:  8,  y: 7.0, z: 35, w: 16, h: 4.5 },
+      { x: -14, y: 8.0, z: 40, w: 18, h: 5.0 },
+      { x:  3,  y: 4.5, z: 18, w:  9, h: 3.0 },
+      { x: -2,  y: 6.5, z: 45, w: 14, h: 4.0 },
+      { x: 16,  y: 6.0, z: 30, w: 11, h: 3.5 },
+      { x: -10, y: 7.5, z: 32, w: 10, h: 3.0 },
+    ];
+
+    for (let i = 0; i < placements.length; i++) {
+      const p = placements[i];
+      const cloud = MeshBuilder.CreatePlane(`cloud${i}`, { width: p.w, height: p.h }, scene);
+      cloud.position.set(p.x, p.y, p.z);
+      cloud.billboardMode = Mesh.BILLBOARDMODE_ALL;
+      cloud.isPickable = false;
+
+      const mat = new StandardMaterial(`cloudMat${i}`, scene);
+      mat.diffuseTexture = cloudTex;
+      mat.opacityTexture = cloudTex;
+      mat.emissiveColor = new Color3(0.97, 0.97, 1.0);
+      mat.diffuseColor = new Color3(1, 1, 1);
+      mat.disableLighting = true;
+      mat.backFaceCulling = false;
+      mat.specularColor = Color3.Black();
+      cloud.material = mat;
+    }
+  }
+
+  private createCloudTexture(scene: Scene): DynamicTexture {
+    const size = 1024;
+    const tex = new DynamicTexture('cloudTex', { width: size, height: size }, scene, false);
+    const ctx = tex.getContext();
+
+    ctx.clearRect(0, 0, size, size);
+
+    const puffs: { cx: number; cy: number; r: number }[] = [
+      { cx: 512, cy: 540, r: 180 },
+      { cx: 340, cy: 520, r: 150 },
+      { cx: 680, cy: 520, r: 155 },
+      { cx: 230, cy: 545, r: 120 },
+      { cx: 790, cy: 540, r: 125 },
+      { cx: 420, cy: 470, r: 140 },
+      { cx: 620, cy: 465, r: 145 },
+      { cx: 512, cy: 480, r: 170 },
+      { cx: 300, cy: 490, r: 110 },
+      { cx: 720, cy: 490, r: 115 },
+      { cx: 512, cy: 510, r: 160 },
+    ];
+
+    for (const puff of puffs) {
+      const g = ctx.createRadialGradient(puff.cx, puff.cy, 0, puff.cx, puff.cy, puff.r);
+      g.addColorStop(0, 'rgba(255,255,255,1.0)');
+      g.addColorStop(0.55, 'rgba(255,255,255,0.95)');
+      g.addColorStop(0.75, 'rgba(252,252,255,0.7)');
+      g.addColorStop(0.88, 'rgba(248,248,252,0.25)');
+      g.addColorStop(1, 'rgba(245,245,250,0)');
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(puff.cx, puff.cy, puff.r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    tex.update();
+    tex.hasAlpha = true;
+    return tex;
+  }
+
+  /* ── Treeline ─────────────────────────────────────────────────── */
+
+  private createTreeline(scene: Scene): void {
+    const treeTex = this.createTreeTexture(scene);
+
+    const backdrop = MeshBuilder.CreatePlane('treeline', { width: 50, height: 6 }, scene);
+    backdrop.position.set(0, 3, 19);
+    backdrop.isPickable = false;
+    const bdMat = new StandardMaterial('treelineMat', scene);
+    bdMat.diffuseTexture = treeTex;
+    bdMat.opacityTexture = treeTex;
+    bdMat.emissiveColor = new Color3(0.35, 0.55, 0.25);
+    bdMat.diffuseColor = new Color3(0.4, 0.6, 0.3);
+    bdMat.specularColor = Color3.Black();
+    bdMat.backFaceCulling = false;
+    backdrop.material = bdMat;
+  }
+
+  private createTreeTexture(scene: Scene): DynamicTexture {
+    const w = 2048, h = 512;
+    const tex = new DynamicTexture('treelineTex', { width: w, height: h }, scene, true);
+    const ctx = tex.getContext();
+    ctx.clearRect(0, 0, w, h);
+
+    const treeCount = 55;
+    for (let i = 0; i < treeCount; i++) {
+      const cx = (i / treeCount) * w + (Math.random() - 0.5) * (w / treeCount) * 0.8;
+      const treeH = 220 + Math.random() * 220;
+      const treeW = 70 + Math.random() * 90;
+      const baseY = h;
+      const shade = 0.7 + Math.random() * 0.3;
+
+      const trunkW = 6 + Math.random() * 5;
+      const trunkH = treeH * 0.4;
+      ctx.fillStyle = `rgb(${Math.floor(65 * shade)},${Math.floor(45 * shade)},${Math.floor(20 * shade)})`;
+      ctx.fillRect(cx - trunkW / 2, baseY - trunkH, trunkW, trunkH);
+
+      this.drawCanopyCluster(ctx, cx, baseY - treeH * 0.4, treeW, treeH * 0.7, shade);
+    }
+
+    tex.update();
+    tex.hasAlpha = true;
+    return tex;
+  }
+
+  private drawCanopyCluster(
+    ctx: CanvasRenderingContext2D | ICanvasRenderingContext,
+    cx: number, cy: number, width: number, height: number, shade: number,
+  ): void {
+    const baseR = Math.floor(30 * shade);
+    const baseG = Math.floor(75 * shade);
+    const baseB = Math.floor(22 * shade);
+
+    const bulges: { ox: number; oy: number; rx: number; ry: number }[] = [];
+    for (let i = 0; i < 8; i++) {
+      bulges.push({
+        ox: (Math.random() - 0.5) * width * 0.6,
+        oy: (Math.random() - 0.5) * height * 0.5,
+        rx: width * (0.2 + Math.random() * 0.15),
+        ry: height * (0.18 + Math.random() * 0.12),
+      });
+    }
+
+    ctx.fillStyle = `rgb(${baseR},${baseG},${baseB})`;
+    for (const bl of bulges) {
+      ctx.beginPath();
+      ctx.arc(cx + bl.ox, cy + bl.oy, Math.min(bl.rx, bl.ry), 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    const leafCount = Math.floor(width * height * 0.012);
+    for (let i = 0; i < leafCount; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const dist = Math.random();
+      const lx = cx + Math.cos(angle) * dist * width * 0.42;
+      const ly = cy + Math.sin(angle) * dist * height * 0.42;
+
+      let inside = false;
+      for (const bl of bulges) {
+        const dx = (lx - (cx + bl.ox)) / bl.rx;
+        const dy = (ly - (cy + bl.oy)) / bl.ry;
+        if (dx * dx + dy * dy < 1.1) { inside = true; break; }
+      }
+      if (!inside) continue;
+
+      const ls = 0.6 + Math.random() * 0.7;
+      const isLight = ly < cy;
+      const lr = Math.floor((isLight ? 45 : 25) * ls);
+      const lg = Math.floor((isLight ? 105 : 65) * ls);
+      const lb = Math.floor((isLight ? 28 : 15) * ls);
+      const lr2 = 2 + Math.random() * 4;
+
+      ctx.fillStyle = `rgb(${lr},${lg},${lb})`;
+      ctx.fillRect(lx - lr2, ly - lr2, lr2 * 2, lr2 * 2);
+    }
+
+    ctx.fillStyle = `rgba(${baseR + 30},${baseG + 40},${baseB + 15},0.6)`;
+    for (const bl of bulges) {
+      const hlx = cx + bl.ox - bl.rx * 0.2;
+      const hly = cy + bl.oy - bl.ry * 0.3;
+      const hlr = Math.min(bl.rx, bl.ry) * 0.4;
+      ctx.beginPath();
+      ctx.arc(hlx, hly, hlr, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
   private createGround(scene: Scene): void {
+    const tileCount = 8;
     const g = MeshBuilder.CreateGround('ground',
       { width: CORNHOLE.ground.sizeM, height: CORNHOLE.ground.sizeM }, scene);
     g.position.y = 0;
+
+    const uvs = g.getVerticesData(VertexBuffer.UVKind);
+    if (uvs) {
+      for (let i = 0; i < uvs.length; i++) uvs[i] *= tileCount;
+      g.updateVerticesData(VertexBuffer.UVKind, uvs);
+    }
+
     const mat = new StandardMaterial('groundMat', scene);
-    mat.diffuseColor = new Color3(0.22, 0.45, 0.22);
-    mat.specularColor = Color3.Black();
+    const grassTex = this.createGrassTexture(scene);
+    grassTex.wrapU = Texture.WRAP_ADDRESSMODE;
+    grassTex.wrapV = Texture.WRAP_ADDRESSMODE;
+    mat.diffuseTexture = grassTex;
+    mat.specularColor = new Color3(0.05, 0.05, 0.02);
     g.material = mat;
     g.physicsImpostor = new PhysicsImpostor(g, PhysicsImpostor.BoxImpostor,
       { mass: 0, friction: 0.9, restitution: 0.05 }, scene);
   }
 
+  private createGrassTexture(scene: Scene): DynamicTexture {
+    const size = 512;
+    const tex = new DynamicTexture('grassTex', { width: size, height: size }, scene, true);
+    const ctx = tex.getContext();
+
+    ctx.fillStyle = '#4a9935';
+    ctx.fillRect(0, 0, size, size);
+
+    for (let y = 0; y < size; y += 2) {
+      const shade = 0.85 + Math.random() * 0.3;
+      const r = Math.floor(65 * shade);
+      const gv = Math.floor(140 * shade);
+      const b = Math.floor(45 * shade);
+      ctx.fillStyle = `rgb(${r},${gv},${b})`;
+      ctx.fillRect(0, y, size, 2);
+    }
+
+    for (let i = 0; i < 12000; i++) {
+      const bx = Math.random() * size;
+      const by = Math.random() * size;
+      const bladeH = 6 + Math.random() * 14;
+      const lean = (Math.random() - 0.5) * 4;
+      const shade = 0.6 + Math.random() * 0.6;
+      const r = Math.floor(40 * shade);
+      const gv = Math.floor(155 * shade);
+      const b = Math.floor(30 * shade);
+      ctx.strokeStyle = `rgba(${r},${gv},${b},${0.6 + Math.random() * 0.4})`;
+      ctx.lineWidth = 1.0 + Math.random() * 1.2;
+      ctx.beginPath();
+      ctx.moveTo(bx, by);
+      ctx.lineTo(bx + lean, by - bladeH);
+      ctx.stroke();
+    }
+
+    for (let i = 0; i < 50; i++) {
+      const px = Math.random() * size;
+      const py = Math.random() * size;
+      const patchR = 20 + Math.random() * 40;
+      const dark = Math.random() > 0.5;
+      ctx.fillStyle = dark
+        ? `rgba(25,75,15,${0.15 + Math.random() * 0.15})`
+        : `rgba(90,175,55,${0.12 + Math.random() * 0.12})`;
+      ctx.beginPath();
+      ctx.arc(px, py, patchR, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    tex.update();
+    return tex;
+  }
+
   private createBoard(scene: Scene): void {
     const { widthM, lengthM, thicknessM, holeCenterZLocal, holeRadiusM } = CORNHOLE.board;
     const { x: bx, y: by, z: bz } = CORNHOLE.boardWorld;
+    const tilt = CORNHOLE.boardTiltRad;
+    const halfL = lengthM / 2;
+    const halfW = widthM / 2;
+
+    const boardNode = new TransformNode('boardNode', scene);
+    boardNode.position.set(bx, by, bz);
+    boardNode.rotation.x = -tilt;
 
     const deckBox = MeshBuilder.CreateBox('deckBox',
       { width: widthM, height: thicknessM, depth: lengthM }, scene);
-    deckBox.position.set(bx, by, bz);
 
     const holeCyl = MeshBuilder.CreateCylinder('holeCyl', {
       diameter: holeRadiusM * 2,
       height: thicknessM + 0.02,
       tessellation: 32,
     }, scene);
-    holeCyl.position.set(bx, by, bz + holeCenterZLocal);
+    holeCyl.position.set(0, 0, holeCenterZLocal);
 
     const deckCSG = CSG.FromMesh(deckBox);
     const holeCSG = CSG.FromMesh(holeCyl);
@@ -231,26 +509,25 @@ export class CornholeSceneService {
     wood.diffuseTexture = this.createWoodGrainTexture(scene);
     wood.specularColor = new Color3(0.12, 0.10, 0.06);
     deck.material = wood;
+    deck.parent = boardNode;
 
     const rim = MeshBuilder.CreateTorus('holeRim', {
       diameter: holeRadiusM * 2,
       thickness: 0.006,
       tessellation: 32,
     }, scene);
-    rim.position.set(bx, by + thicknessM / 2, bz + holeCenterZLocal);
+    rim.position.set(0, thicknessM / 2, holeCenterZLocal);
     const rimMat = new StandardMaterial('rimMat', scene);
     rimMat.diffuseColor = new Color3(0.6, 0.45, 0.3);
     rimMat.specularColor = Color3.Black();
     rim.material = rimMat;
+    rim.parent = boardNode;
 
-    const halfL = lengthM / 2;
-    const halfW = widthM / 2;
     const R = holeRadiusM;
-
     const logoLocalZ = (-halfL + holeCenterZLocal) / 2;
     const logoSize = 0.45;
     const logo = MeshBuilder.CreatePlane('logo', { width: logoSize, height: logoSize }, scene);
-    logo.position.set(bx, by + thicknessM / 2 + 0.001, bz + logoLocalZ);
+    logo.position.set(0, thicknessM / 2 + 0.001, logoLocalZ);
     logo.rotation.x = Math.PI / 2;
     const logoMat = new StandardMaterial('logoMat', scene);
     logoMat.diffuseTexture = new Texture('irish-rose-logo.png', scene);
@@ -259,8 +536,30 @@ export class CornholeSceneService {
     logoMat.specularColor = Color3.Black();
     logoMat.backFaceCulling = false;
     logo.material = logoMat;
+    logo.parent = boardNode;
 
     this.addDeckSurfaceColliders(scene, bx, by, bz, halfW, halfL, holeCenterZLocal, R);
+
+    const sinT = Math.sin(tilt);
+    const cosT = Math.cos(tilt);
+    const backBottomY = by + halfL * sinT - (thicknessM / 2) * cosT;
+    const backZ = bz + halfL * cosT + (thicknessM / 2) * sinT;
+    const legW = 0.04;
+    const legInset = 0.05;
+    const legMat = new StandardMaterial('legMat', scene);
+    legMat.diffuseColor = new Color3(0.55, 0.38, 0.2);
+    legMat.specularColor = Color3.Black();
+
+    const legXs = [
+      bx - halfW + legInset + legW / 2,
+      bx + halfW - legInset - legW / 2,
+    ];
+    for (let i = 0; i < legXs.length; i++) {
+      const leg = MeshBuilder.CreateBox(`leg${i}`, { width: legW, height: backBottomY, depth: legW }, scene);
+      leg.position.set(legXs[i], backBottomY / 2, backZ - legInset);
+      leg.material = legMat;
+      leg.isPickable = false;
+    }
   }
 
   private createWoodGrainTexture(scene: Scene): DynamicTexture {
@@ -434,7 +733,10 @@ export class CornholeSceneService {
     if (!this.scene) return;
     if (this.bag) {
       const p = this.bagWorldCenter();
-      const onBoard = p.y > 0.42 && p.y < 0.75;
+      const lz = p.z - CORNHOLE.boardWorld.z;
+      const surfY = CORNHOLE.boardWorld.y + lz * Math.sin(CORNHOLE.boardTiltRad)
+        + (CORNHOLE.board.thicknessM / 2) * Math.cos(CORNHOLE.boardTiltRad);
+      const onBoard = p.y > surfY - 0.06 && p.y < surfY + 0.2;
       if (this.bag.physicsImpostor) {
         this.bag.physicsImpostor.dispose();
         this.bag.physicsImpostor = null;
@@ -728,11 +1030,14 @@ export class CornholeSceneService {
     const count = nodes.size();
     if (count === 0) return;
 
-    const boardSurfY = CORNHOLE.boardWorld.y + CORNHOLE.board.thicknessM / 2;
+    const by = CORNHOLE.boardWorld.y;
     const bx = CORNHOLE.boardWorld.x;
     const bzAmmo = -CORNHOLE.boardWorld.z;
     const halfW = CORNHOLE.board.widthM / 2;
     const halfL = CORNHOLE.board.lengthM / 2;
+    const halfT = CORNHOLE.board.thicknessM / 2;
+    const sinT = Math.sin(CORNHOLE.boardTiltRad);
+    const cosT = Math.cos(CORNHOLE.boardTiltRad);
     const holeZAmmo = -(CORNHOLE.boardWorld.z + CORNHOLE.board.holeCenterZLocal);
     const holeR2 = CORNHOLE.board.holeRadiusM * CORNHOLE.board.holeRadiusM;
     let touched = false;
@@ -753,11 +1058,13 @@ export class CornholeSceneService {
 
       const dx = px - bx;
       const dz = pz - bzAmmo;
-      if (Math.abs(dx) <= halfW && Math.abs(dz) <= halfL && py < boardSurfY && py > boardSurfY - 0.35) {
+      const localZ = -dz;
+      const surfY = by + localZ * sinT + halfT * cosT;
+      if (Math.abs(dx) <= halfW && Math.abs(dz) <= halfL && py < surfY && py > surfY - 0.35) {
         const hx = px - bx;
         const hz = pz - holeZAmmo;
         if (hx * hx + hz * hz > holeR2) {
-          pos.setY(boardSurfY);
+          pos.setY(surfY);
           vel.setY(0);
           vel.setX(vel.x() * 0.4);
           vel.setZ(vel.z() * 0.4);
@@ -772,8 +1079,9 @@ export class CornholeSceneService {
   }
 
   private classifyThrow(p: Vector3): ThrowResult {
-    const { widthM, lengthM } = CORNHOLE.board;
-    const { x: bx, z: bz } = CORNHOLE.boardWorld;
+    const { widthM, lengthM, thicknessM } = CORNHOLE.board;
+    const { x: bx, y: by, z: bz } = CORNHOLE.boardWorld;
+    const tilt = CORNHOLE.boardTiltRad;
     const halfW = widthM / 2;
     const halfL = lengthM / 2;
 
@@ -788,11 +1096,11 @@ export class CornholeSceneService {
     const nearGround = p.y < CORNHOLE.bag.thicknessM * 2.5;
     const inHoleRadius = holeDist < CORNHOLE.board.holeRadiusM + 0.02;
 
+    const surfY = by + lz * Math.sin(tilt) + (thicknessM / 2) * Math.cos(tilt);
+    const onBoardY = p.y > surfY - 0.06 && p.y < surfY + 0.2;
+
     if (nearGround && inHoleRadius) return 'in_hole';
-    if (p.y > 0.42 && p.y < 0.75 && onBoardXZ && holeDist > CORNHOLE.board.holeRadiusM * 0.85) return 'on_board';
-    if (p.y > 0.42 && p.y < 0.75 && onBoardXZ && inHoleRadius) return 'on_board';
-    if (nearGround && !inHoleRadius) return 'miss';
-    if (p.y > 0.42 && p.y < 0.75 && onBoardXZ) return 'on_board';
+    if (onBoardY && onBoardXZ) return 'on_board';
     return 'miss';
   }
 }
