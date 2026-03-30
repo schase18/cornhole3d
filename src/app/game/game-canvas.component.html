@@ -27,6 +27,14 @@
         <span class="value">{{ state.round }}</span>
       </div>
       <p class="hint">{{ state.lastMessage }}</p>
+      <div class="side-toggle">
+        <button
+          [class.active]="gameState.bagSide === 'slow'"
+          (click)="setBagSide('slow')">Slow Side</button>
+        <button
+          [class.active]="gameState.bagSide === 'fast'"
+          (click)="setBagSide('fast')">Fast Side</button>
+      </div>
     </div>
   }
 </div>

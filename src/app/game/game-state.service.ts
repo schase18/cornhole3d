@@ -2,6 +2,7 @@ import { Injectable } from '@angular/core';
 import { BehaviorSubject } from 'rxjs';
 
 export type ThrowResult = 'in_hole' | 'on_board' | 'miss';
+export type BagSide = 'slow' | 'fast';
 
 export interface GameStateSnapshot {
   totalScore: number;
@@ -32,6 +33,8 @@ export class GameStateService {
   });
 
   readonly state$ = this.stateSubject.asObservable();
+
+  bagSide: BagSide = 'slow';
 
   get snapshot(): GameStateSnapshot {
     return this.stateSubject.value;

@@ -50,3 +50,38 @@
   line-height: 1.35;
   opacity: 0.92;
 }
+
+.side-toggle {
+  display: flex;
+  margin-top: 0.6rem;
+  pointer-events: auto;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+
+  button {
+    flex: 1;
+    padding: 0.4rem 0.75rem;
+    background: rgba(255, 255, 255, 0.06);
+    color: rgba(255, 255, 255, 0.55);
+    border: none;
+    font-size: 0.82rem;
+    font-family: inherit;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+
+    &:first-child {
+      border-right: 1px solid rgba(255, 255, 255, 0.12);
+    }
+
+    &.active {
+      background: rgba(255, 255, 255, 0.18);
+      color: #fff;
+      font-weight: 600;
+    }
+
+    &:hover:not(.active) {
+      background: rgba(255, 255, 255, 0.1);
+    }
+  }
+}

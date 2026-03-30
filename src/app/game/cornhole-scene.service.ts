@@ -685,15 +685,172 @@ export class CornholeSceneService {
     bag.createNormals(true);
     bag.forceSharedVertices();
 
+    const uvs = bag.getVerticesData(VertexBuffer.UVKind);
+    const pos = bag.getVerticesData(VertexBuffer.PositionKind);
+    if (uvs && pos) {
+      const halfW = widthM / 2;
+      const halfD = depthM / 2;
+      const vertCount = uvs.length / 2;
+      for (let vi = 0; vi < vertCount; vi++) {
+        const u = Math.max(0, Math.min(1, (pos[vi * 3] + halfW) / widthM));
+        const vLocal = Math.max(0, Math.min(1, (pos[vi * 3 + 2] + halfD) / depthM));
+        uvs[vi * 2] = u;
+        uvs[vi * 2 + 1] = pos[vi * 3 + 1] >= 0 ? 0.5 + vLocal * 0.5 : vLocal * 0.5;
+      }
+      bag.updateVerticesData(VertexBuffer.UVKind, uvs);
+    }
+
     const mat = new StandardMaterial('bagMat', scene);
-    mat.diffuseColor = new Color3(0.85, 0.12, 0.12);
+    mat.diffuseTexture = this.createBagTexture(scene);
     mat.specularColor = Color3.Black();
     bag.material = mat;
 
     const { x, z } = CORNHOLE.throwLine;
     bag.position.set(x, throwLineY(), z);
-    bag.rotationQuaternion = Quaternion.Identity();
+    bag.rotationQuaternion = this.gameState.bagSide === 'fast'
+      ? Quaternion.FromEulerAngles(Math.PI, 0, 0)
+      : Quaternion.Identity();
     this.bag = bag;
+  }
+
+  flipBagToSide(): void {
+    if (!this.bag || this.bag.physicsImpostor || this.evaluating || this.dragging) return;
+    this.bag.rotationQuaternion = this.gameState.bagSide === 'fast'
+      ? Quaternion.FromEulerAngles(Math.PI, 0, 0)
+      : Quaternion.Identity();
+  }
+
+  private createBagTexture(scene: Scene): DynamicTexture {
+    const face = 512;
+    const texH = face * 2;
+    const tex = new DynamicTexture('bagTex', { width: face, height: texH }, scene, true);
+    const ctx = tex.getContext() as unknown as CanvasRenderingContext2D;
+
+    // ── Logo face (top face of bag → canvas y: 0 → face) ──
+    ctx.fillStyle = '#0f1b3d';
+    ctx.fillRect(0, 0, face, face);
+
+    const splashes: { cx: number; cy: number; r: number; rgb: number[] }[] = [
+      { cx: face * 0.72, cy: face * 0.22, r: face * 0.42, rgb: [0, 200, 185] },
+      { cx: face * 0.55, cy: face * 0.12, r: face * 0.28, rgb: [20, 225, 205] },
+      { cx: face * 0.85, cy: face * 0.45, r: face * 0.20, rgb: [0, 175, 160] },
+      { cx: face * 0.25, cy: face * 0.78, r: face * 0.42, rgb: [220, 45, 120] },
+      { cx: face * 0.42, cy: face * 0.88, r: face * 0.30, rgb: [235, 60, 140] },
+      { cx: face * 0.12, cy: face * 0.58, r: face * 0.22, rgb: [200, 35, 100] },
+      { cx: face * 0.50, cy: face * 0.50, r: face * 0.15, rgb: [255, 220, 50] },
+    ];
+    for (const s of splashes) {
+      const grad = ctx.createRadialGradient(s.cx, s.cy, 0, s.cx, s.cy, s.r);
+      const [r, g, b] = s.rgb;
+      grad.addColorStop(0, `rgba(${r},${g},${b},0.85)`);
+      grad.addColorStop(0.35, `rgba(${r},${g},${b},0.6)`);
+      grad.addColorStop(0.65, `rgba(${r},${g},${b},0.25)`);
+      grad.addColorStop(1, `rgba(${r},${g},${b},0)`);
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, face, face);
+    }
+
+    for (let i = 0; i < 25; i++) {
+      const sx = Math.random() * face;
+      const sy = Math.random() * face;
+      const sr = 4 + Math.random() * 18;
+      const colors = [[0, 200, 185], [220, 45, 120], [255, 220, 50]];
+      const c = colors[Math.floor(Math.random() * colors.length)];
+      ctx.fillStyle = `rgba(${c[0]},${c[1]},${c[2]},${0.12 + Math.random() * 0.25})`;
+      ctx.beginPath();
+      ctx.arc(sx, sy, sr, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    ctx.fillStyle = 'rgba(255,255,255,0.85)';
+    this.drawStar(ctx, face * 0.22, face * 0.25, 28, 12, 5);
+    ctx.fill();
+
+    const mainFont = Math.floor(face * 0.52);
+    ctx.font = `bold ${mainFont}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = 'rgba(0,0,0,0.3)';
+    ctx.fillText('3D', face / 2 + 4, face / 2 + 4);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText('3D', face / 2, face / 2);
+
+    const subFont = Math.floor(face * 0.08);
+    ctx.font = `bold ${subFont}px sans-serif`;
+    ctx.fillStyle = 'rgba(255,255,255,0.7)';
+    ctx.fillText('CORNHOLE', face / 2, face * 0.82);
+
+    for (let i = 0; i < 4000; i++) {
+      const fx = Math.random() * face;
+      const fy = Math.random() * face;
+      const a = 0.02 + Math.random() * 0.04;
+      ctx.fillStyle = Math.random() > 0.5
+        ? `rgba(255,255,255,${a})` : `rgba(0,0,0,${a})`;
+      ctx.fillRect(fx, fy, 1, 1);
+    }
+
+    const inset = 14;
+    ctx.fillStyle = 'rgba(200,200,200,0.3)';
+    this.drawStitchRect(ctx, inset, inset, face - inset * 2, face - inset * 2, 8, 5);
+
+    // ── White / cream face (bottom face of bag → canvas y: face → texH) ──
+    ctx.fillStyle = '#f0ebe3';
+    ctx.fillRect(0, face, face, face);
+
+    for (let i = 0; i < 8000; i++) {
+      const fx = Math.random() * face;
+      const fy = face + Math.random() * face;
+      const n = Math.random() * 14 - 7;
+      ctx.fillStyle = `rgba(${Math.floor(240 + n)},${Math.floor(235 + n)},${Math.floor(227 + n)},0.35)`;
+      ctx.fillRect(fx, fy, 2, 2);
+    }
+
+    ctx.strokeStyle = 'rgba(200,195,185,0.12)';
+    ctx.lineWidth = 0.5;
+    for (let gx = 0; gx < face; gx += 8) {
+      ctx.beginPath(); ctx.moveTo(gx, face); ctx.lineTo(gx, texH); ctx.stroke();
+    }
+    for (let gy = face; gy < texH; gy += 8) {
+      ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(face, gy); ctx.stroke();
+    }
+
+    ctx.fillStyle = 'rgba(180,170,155,0.4)';
+    this.drawStitchRect(ctx, inset, face + inset, face - inset * 2, face - inset * 2, 8, 5);
+
+    tex.update();
+    return tex;
+  }
+
+  private drawStar(
+    ctx: CanvasRenderingContext2D | ICanvasRenderingContext,
+    cx: number, cy: number, outerR: number, innerR: number, points: number,
+  ): void {
+    ctx.beginPath();
+    for (let i = 0; i < points * 2; i++) {
+      const angle = (i * Math.PI) / points - Math.PI / 2;
+      const r = i % 2 === 0 ? outerR : innerR;
+      const px = cx + r * Math.cos(angle);
+      const py = cy + r * Math.sin(angle);
+      if (i === 0) ctx.moveTo(px, py);
+      else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+  }
+
+  private drawStitchRect(
+    ctx: CanvasRenderingContext2D | ICanvasRenderingContext,
+    x: number, y: number, w: number, h: number,
+    dashLen: number, gapLen: number,
+  ): void {
+    const step = dashLen + gapLen;
+    for (let dx = 0; dx < w; dx += step) {
+      ctx.fillRect(x + dx, y, Math.min(dashLen, w - dx), 2);
+      ctx.fillRect(x + dx, y + h - 2, Math.min(dashLen, w - dx), 2);
+    }
+    for (let dy = 0; dy < h; dy += step) {
+      ctx.fillRect(x, y + dy, 2, Math.min(dashLen, h - dy));
+      ctx.fillRect(x + w - 2, y + dy, 2, Math.min(dashLen, h - dy));
+    }
   }
 
   /**

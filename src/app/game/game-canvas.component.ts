@@ -8,7 +8,7 @@ import {
 } from '@angular/core';
 import { AsyncPipe } from '@angular/common';
 import { CornholeSceneService } from './cornhole-scene.service';
-import { GameStateService } from './game-state.service';
+import { GameStateService, BagSide } from './game-state.service';
 
 @Component({
   selector: 'app-game-canvas',
@@ -26,6 +26,11 @@ export class GameCanvasComponent implements AfterViewInit, OnDestroy {
 
   ngAfterViewInit(): void {
     void this.scene.init(this.renderCanvas.nativeElement);
+  }
+
+  setBagSide(side: BagSide): void {
+    this.gameState.bagSide = side;
+    this.scene.flipBagToSide();
   }
 
   ngOnDestroy(): void {
