@@ -28,18 +28,18 @@ export const CORNHOLE = {
   boardWorld: {
     x: 0,
     y: 0.1524,
-    z: 3,
+    z: 8.2296, // 27 ft from throw line
   },
   /** Tilt angle in radians (~13°).  Front edge on ground, back top at 1 ft. */
   boardTiltRad: 0.2274,
   /** Spawn / throw: bag center height ~hand release; -Z toward camera. */
   throwLine: {
     x: 0,
-    z: 0.5,
+    z: 0,
   },
 } as const;
 
 /** Center Y of bag at throw (meters above origin). */
 export function throwLineY(): number {
-  return CORNHOLE.bag.thicknessM / 2 + 0.38;
+  return 0.9144; // 3 ft
 }

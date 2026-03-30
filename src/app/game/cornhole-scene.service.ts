@@ -29,12 +29,12 @@ const HOLE_WORLD = {
 
 const GROUND_PLANE = Plane.FromPositionAndNormal(new Vector3(0, 0, 0), new Vector3(0, 1, 0));
 
-const DEFAULT_CAM_POS = new Vector3(0, 0.95, -0.1);
-const DEFAULT_CAM_TARGET = new Vector3(0, 0.3, 3.0);
+const DEFAULT_CAM_POS = new Vector3(0, 1.2, -0.6);
+const DEFAULT_CAM_TARGET = new Vector3(0, 0.3, 8.23);
 const DEFAULT_CAM_FOV = 1.0;
 const FLIGHT_CAM_FOV = 1.1;
 const AIM_CAM_FOV = 0.95;
-const FLIGHT_FOLLOW_OFFSET = new Vector3(0, 0.7, -1.0);
+const FLIGHT_FOLLOW_OFFSET = new Vector3(0, 1.5, -3.0);
 
 /* ── Ammo soft-body node accessors ────────────────────────────────── */
 
@@ -865,12 +865,13 @@ export class CornholeSceneService {
     if (!this.camera || !this.bag) return;
     const bagPos = this.bagWorldCenter();
     const arcBoost = Math.min(1.15, Math.max(0, bagPos.y - 0.42) * 0.58);
+    const clampedX = bagPos.x * 0.15;
     this.scratchDesiredCam.set(
-      bagPos.x + FLIGHT_FOLLOW_OFFSET.x,
+      clampedX + FLIGHT_FOLLOW_OFFSET.x,
       bagPos.y + FLIGHT_FOLLOW_OFFSET.y + arcBoost,
       bagPos.z + FLIGHT_FOLLOW_OFFSET.z,
     );
-    this.scratchFocus.set(bagPos.x, bagPos.y + 0.04, bagPos.z);
+    this.scratchFocus.set(clampedX, bagPos.y + 0.04, bagPos.z);
     Vector3.LerpToRef(this.camera.position, this.scratchDesiredCam, smooth, this.camera.position);
     this.scratchCamTarget.copyFrom(this.camera.getTarget());
     Vector3.LerpToRef(this.scratchCamTarget, this.scratchFocus, smooth, this.scratchNextTarget);
@@ -965,12 +966,12 @@ export class CornholeSceneService {
 
     const pull = Vector3.Distance(this.dragStart, target);
     const pullT = Math.min(1, pull / 4.2);
-    const horizSpeed = 4.5 + pullT * 3.5;
-    const upSpeed = 4.0 + pullT * 2.0;
+    const horizSpeed = 16.0 + pullT * 9.0;
+    const upSpeed = 5.5 + pullT * 3.0;
     const deltaV = dir.scale(horizSpeed).add(new Vector3(0, upSpeed, 0));
 
-    const RPM = 200;
-    const spinY = RPM * (2 * Math.PI) / 60;
+    const RPM = 600;
+    const spinY = -(RPM * (2 * Math.PI) / 60);
     this.applySoftBodyVelocity(deltaV, spinY);
 
     this.evaluating = true;
