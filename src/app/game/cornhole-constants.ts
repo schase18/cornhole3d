@@ -61,5 +61,5 @@ export const MAX_THROW_HORIZ_SPEED_MPS = 25.5;
 /** Ground distance (m) that must be dragged for full pull power — larger = less sensitive. */
 export const PULL_DISTANCE_FOR_FULL_POWER_M = 5.0;
 
-/** Slight boost to horizontal + upward velocity at mouse release. */
-export const THROW_RELEASE_ENERGY_MUL = 1.045;
+/** Boost to horizontal + upward velocity at mouse release. */
+export const THROW_RELEASE_ENERGY_MUL = 1.12;

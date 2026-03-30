@@ -47,6 +47,11 @@ export class GameCanvasComponent implements AfterViewInit, OnDestroy {
     this.gameState.slickSpeed = +(event.target as HTMLSelectElement).value;
   }
 
+  resetGame(): void {
+    this.scene.resetPractice();
+    this.gameState.resetGame();
+  }
+
   ngOnDestroy(): void {
     this.scene.dispose();
   }

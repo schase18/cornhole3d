@@ -243,6 +243,45 @@ export class CornholeSceneService {
     this.maxLinSeen = 0;
   }
 
+  /**
+   * Remove all bags from the lawn/board and spawn a new bag at the throw line.
+   * Clears pending throw timers; safe to call mid-aim or mid-flight.
+   */
+  resetPractice(): void {
+    const scene = this.scene;
+    if (!scene) return;
+
+    if (this.nextThrowResetTimer !== null) {
+      clearTimeout(this.nextThrowResetTimer);
+      this.nextThrowResetTimer = null;
+    }
+    this.dragging = false;
+    this.pointerTrail = [];
+
+    for (const b of this.settledBags) {
+      b.dispose();
+    }
+    this.settledBags = [];
+
+    if (this.bag) {
+      if (this.bag.physicsImpostor) {
+        this.bag.physicsImpostor.dispose();
+        this.bag.physicsImpostor = null;
+      }
+      this.bag.dispose();
+      this.bag = null;
+    }
+
+    this.buildBagMesh(scene);
+    this.settledHandled = false;
+    this.evaluating = false;
+    this.firstContactMs = 0;
+    this.calmStreak = 0;
+    this.maxLinSeen = 0;
+    this.flipStartMs = 0;
+    this.resetCameraToDefault();
+  }
+
   /* ================================================================
    *  Static geometry
    * ================================================================ */
@@ -664,7 +703,7 @@ export class CornholeSceneService {
       m.isVisible = false;
       m.isPickable = false;
       m.physicsImpostor = new PhysicsImpostor(m, PhysicsImpostor.BoxImpostor,
-        { mass: 0, friction: 0.65, restitution: 0.02 }, scene);
+        { mass: 0, friction: 0.38, restitution: 0.02 }, scene);
     };
 
     const boardW = CORNHOLE.board.widthM;
@@ -1384,6 +1423,8 @@ export class CornholeSceneService {
     const holeZAmmo = -(CORNHOLE.boardWorld.z + CORNHOLE.board.holeCenterZLocal);
     const holeR2 = CORNHOLE.board.holeRadiusM * CORNHOLE.board.holeRadiusM;
     const SLIDE_DAMP = this.slideDampForBagSide();
+    /** More tangential retention than ground — less slide damping on the deck only. */
+    const BOARD_SLIDE_DAMP = Math.min(0.97, SLIDE_DAMP + (1 - SLIDE_DAMP) * 0.32);
     const STATIC_FRICTION_SPEED = 0.5;
     const POST_CONTACT_MAX_UP_VEL = 0.4;
     const BAG_BOUNCE_MAX_VEL = 1.73;
@@ -1412,7 +1453,7 @@ export class CornholeSceneService {
         if (hx * hx + hz * hz > holeR2) {
           pos.setY(surfY);
           vel.setY(0);
-          this.applyFriction(vel, SLIDE_DAMP, STATIC_FRICTION_SPEED);
+          this.applyFriction(vel, BOARD_SLIDE_DAMP, STATIC_FRICTION_SPEED);
           touched = true;
         }
       }
@@ -1439,7 +1480,7 @@ export class CornholeSceneService {
           pos.setY(sTopY);
           if (vel.y() < 0) vel.setY(0);
           if (vel.y() > BAG_BOUNCE_MAX_VEL) vel.setY(BAG_BOUNCE_MAX_VEL);
-          this.applyFriction(vel, SLIDE_DAMP, STATIC_FRICTION_SPEED);
+          this.applyFriction(vel, BOARD_SLIDE_DAMP, STATIC_FRICTION_SPEED);
           touched = true;
         }
       }

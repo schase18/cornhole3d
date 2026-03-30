@@ -117,6 +117,21 @@ export class GameStateService {
     });
   }
 
+  /** Clear score counters and restore a fresh round (used by Reset). */
+  resetGame(): void {
+    this.stateSubject.next({
+      totalScore: 0,
+      bagsIn: 0,
+      bagsOn: 0,
+      bagsOff: 0,
+      throwsRemaining: BAGS_PER_ROUND,
+      round: 1,
+      lastResult: null,
+      lastMessage: 'Drag on the lawn, release to throw.',
+      canThrow: true,
+    });
+  }
+
   private patch(partial: Partial<GameStateSnapshot>): void {
     this.stateSubject.next({ ...this.stateSubject.value, ...partial });
   }

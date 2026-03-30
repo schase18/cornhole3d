@@ -75,6 +75,35 @@
   opacity: 0.92;
 }
 
+.reset-row {
+  margin-top: 0.55rem;
+  pointer-events: auto;
+
+  button {
+    width: 100%;
+    padding: 0.42rem 0.75rem;
+    border-radius: 6px;
+    border: 1px solid rgba(255, 180, 120, 0.35);
+    background: rgba(255, 120, 60, 0.18);
+    color: #ffe8dc;
+    font-size: 0.84rem;
+    font-family: inherit;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+
+    &:hover {
+      background: rgba(255, 120, 60, 0.28);
+      border-color: rgba(255, 200, 150, 0.45);
+    }
+
+    &:focus-visible {
+      outline: 2px solid rgba(120, 180, 255, 0.85);
+      outline-offset: 2px;
+    }
+  }
+}
+
 .side-toggle {
   display: flex;
   margin-top: 0.6rem;
