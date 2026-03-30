@@ -5,6 +5,9 @@ export type ThrowResult = 'in_hole' | 'on_board' | 'miss';
 
 export interface GameStateSnapshot {
   totalScore: number;
+  bagsIn: number;
+  bagsOn: number;
+  bagsOff: number;
   throwsRemaining: number;
   round: number;
   lastResult: ThrowResult | null;
@@ -18,6 +21,9 @@ const BAGS_PER_ROUND = 4;
 export class GameStateService {
   private readonly stateSubject = new BehaviorSubject<GameStateSnapshot>({
     totalScore: 0,
+    bagsIn: 0,
+    bagsOn: 0,
+    bagsOff: 0,
     throwsRemaining: BAGS_PER_ROUND,
     round: 1,
     lastResult: null,
@@ -67,6 +73,9 @@ export class GameStateService {
         break;
     }
     const totalScore = s.totalScore + points;
+    const bagsIn = s.bagsIn + (result === 'in_hole' ? 1 : 0);
+    const bagsOn = s.bagsOn + (result === 'on_board' ? 1 : 0);
+    const bagsOff = s.bagsOff + (result === 'miss' ? 1 : 0);
     const throwsRemaining = s.throwsRemaining - 1;
     let round = s.round;
     let lastMessage = msg;
@@ -76,6 +85,9 @@ export class GameStateService {
     }
     this.stateSubject.next({
       totalScore,
+      bagsIn,
+      bagsOn,
+      bagsOff,
       throwsRemaining: throwsRemaining === 0 ? BAGS_PER_ROUND : throwsRemaining,
       round,
       lastResult: result,
