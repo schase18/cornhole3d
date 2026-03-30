@@ -6,6 +6,8 @@ import { Scene } from '@babylonjs/core/scene';
 import { Vector3, Matrix, Quaternion } from '@babylonjs/core/Maths/math.vector';
 import { Color3, Color4 } from '@babylonjs/core/Maths/math.color';
 import { Plane } from '@babylonjs/core/Maths/math.plane';
+import { Viewport } from '@babylonjs/core/Maths/math.viewport';
+import { Camera } from '@babylonjs/core/Cameras/camera';
 import { UniversalCamera } from '@babylonjs/core/Cameras/universalCamera';
 import { HemisphericLight } from '@babylonjs/core/Lights/hemisphericLight';
 import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder';
@@ -57,6 +59,7 @@ export class CornholeSceneService {
   private engine: Engine | null = null;
   private scene: Scene | null = null;
   private camera: UniversalCamera | null = null;
+  private miniMapCamera: UniversalCamera | null = null;
   private bag: Mesh | null = null;
   private settledBags: Mesh[] = [];
   private resizeObserver: ResizeObserver | null = null;
@@ -113,8 +116,20 @@ export class CornholeSceneService {
     camera.setTarget(DEFAULT_CAM_TARGET.clone());
     camera.fov = DEFAULT_CAM_FOV;
     camera.minZ = 0.1;
-    scene.activeCamera = camera;
+    camera.viewport = new Viewport(0, 0, 1, 1);
     this.camera = camera;
+
+    const miniMap = new UniversalCamera('miniMapCam',
+      new Vector3(CORNHOLE.boardWorld.x, 4, CORNHOLE.boardWorld.z), scene);
+    miniMap.setTarget(new Vector3(CORNHOLE.boardWorld.x, 0, CORNHOLE.boardWorld.z));
+    miniMap.upVector = new Vector3(0, 0, 1);
+    miniMap.mode = Camera.ORTHOGRAPHIC_CAMERA;
+    miniMap.minZ = 0.1;
+    miniMap.viewport = new Viewport(0.79, 0.31, 0.195, 0.675);
+    this.miniMapCamera = miniMap;
+    this.updateMiniMapOrthoBounds();
+
+    scene.activeCameras = [camera, miniMap];
 
     scene.clearColor = new Color4(0.53, 0.77, 0.97, 1.0);
 
@@ -172,10 +187,13 @@ export class CornholeSceneService {
       });
     });
 
-    this.resizeObserver = new ResizeObserver(() => engine.resize());
+    this.resizeObserver = new ResizeObserver(() => {
+      engine.resize();
+      this.updateMiniMapOrthoBounds();
+    });
     this.resizeObserver.observe(canvas);
     engine.resize();
-    requestAnimationFrame(() => engine.resize());
+    requestAnimationFrame(() => { engine.resize(); this.updateMiniMapOrthoBounds(); });
   }
 
   dispose(): void {
@@ -194,6 +212,7 @@ export class CornholeSceneService {
     if (this.engine) { this.engine.dispose(); this.engine = null; }
     this.bag = null;
     this.camera = null;
+    this.miniMapCamera = null;
     this.ammo = null;
     this.dragging = false;
     this.evaluating = false;
@@ -1078,14 +1097,38 @@ export class CornholeSceneService {
     this.camera.fov += (AIM_CAM_FOV - this.camera.fov) * 0.2;
   }
 
+  private updateMiniMapOrthoBounds(): void {
+    if (!this.miniMapCamera || !this.engine) return;
+    const vp = this.miniMapCamera.viewport;
+    const canvasW = this.engine.getRenderWidth();
+    const canvasH = this.engine.getRenderHeight();
+    const vpPixelW = vp.width * canvasW;
+    const vpPixelH = vp.height * canvasH;
+    const vpAspect = vpPixelW / vpPixelH;
+
+    const boardHalfW = CORNHOLE.board.widthM / 2 + 0.10;
+    const boardHalfL = CORNHOLE.board.lengthM / 2 + 0.10;
+
+    if (vpAspect > boardHalfW / boardHalfL) {
+      this.miniMapCamera.orthoTop = boardHalfL;
+      this.miniMapCamera.orthoBottom = -boardHalfL;
+      this.miniMapCamera.orthoLeft = -boardHalfL * vpAspect;
+      this.miniMapCamera.orthoRight = boardHalfL * vpAspect;
+    } else {
+      this.miniMapCamera.orthoLeft = -boardHalfW;
+      this.miniMapCamera.orthoRight = boardHalfW;
+      this.miniMapCamera.orthoTop = boardHalfW / vpAspect;
+      this.miniMapCamera.orthoBottom = -boardHalfW / vpAspect;
+    }
+  }
+
   /* ================================================================
    *  Input
    * ================================================================ */
 
   private aimPointOnGround(scene: Scene, canvasX: number, canvasY: number): Vector3 | null {
-    const camera = scene.activeCamera;
-    if (!camera) return null;
-    const ray = scene.createPickingRay(canvasX, canvasY, Matrix.Identity(), camera);
+    if (!this.camera) return null;
+    const ray = scene.createPickingRay(canvasX, canvasY, Matrix.Identity(), this.camera);
     const t = ray.intersectsPlane(GROUND_PLANE);
     if (t === null || t < 0) return null;
     return ray.origin.add(ray.direction.scale(t));

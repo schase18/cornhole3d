@@ -13,6 +13,30 @@
   touch-action: none;
 }
 
+.minimap-frame {
+  position: absolute;
+  right: 1.5%;
+  top: 1.5%;
+  width: 19.5%;
+  height: 67.5%;
+  border: 2px solid rgba(255, 255, 255, 0.45);
+  border-radius: 6px;
+  pointer-events: none;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.4);
+}
+
+.minimap-label {
+  position: absolute;
+  bottom: 4px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 0.72rem;
+  color: rgba(255, 255, 255, 0.65);
+  font-family: system-ui, sans-serif;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
 .hud {
   position: absolute;
   left: 1rem;

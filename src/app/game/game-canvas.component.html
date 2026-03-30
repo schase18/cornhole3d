@@ -1,5 +1,8 @@
 <div class="game-shell">
   <canvas #renderCanvas class="render-canvas" touch-action="none"></canvas>
+  <div class="minimap-frame">
+    <span class="minimap-label">Board View</span>
+  </div>
   @if (gameState.state$ | async; as state) {
     <div class="hud" aria-live="polite">
       <div class="hud-row">
