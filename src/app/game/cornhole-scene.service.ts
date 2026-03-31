@@ -101,6 +101,11 @@ export class CornholeSceneService {
   private flipTo = Quaternion.Identity();
   private flipStartMs = 0;
   private readonly FLIP_DURATION_MS = 350;
+  /**
+   * Per-node rest offsets (Ammo space) relative to COM at physics activation — used to
+   * gently re-expand the bag on open ground; skipped when touching the board or bags.
+   */
+  private bagRestRelativeAmmo: Float32Array | null = null;
 
   private readonly zone = inject(NgZone);
   private readonly gameState = inject(GameStateService);
@@ -161,6 +166,7 @@ export class CornholeSceneService {
 
     scene.onAfterPhysicsObservable.add(() => {
       this.enforceCollisions();
+      this.relaxBagOnGround();
       this.preserveFlightSpin();
       this.checkBagSettled();
     });
@@ -247,6 +253,7 @@ export class CornholeSceneService {
     if (this.scene) { this.scene.dispose(); this.scene = null; }
     if (this.engine) { this.engine.dispose(); this.engine = null; }
     this.bag = null;
+    this.bagRestRelativeAmmo = null;
     this.camera = null;
     this.miniMapCamera = null;
     this.ammo = null;
@@ -278,6 +285,7 @@ export class CornholeSceneService {
     }
     this.dragging = false;
     this.pointerTrail = [];
+    this.bagRestRelativeAmmo = null;
 
     for (const b of this.settledBags) {
       b.dispose();
@@ -1037,8 +1045,9 @@ export class CornholeSceneService {
         mass: CORNHOLE.bag.massKg,
         friction: 0.9,
         restitution: 0.01,
-        pressure: 6,
-        stiffness: 0.85,
+        /** Higher pressure + stiffness + bending resistance so the bag re-opens like a filled sack. */
+        pressure: 14,
+        stiffness: 0.93,
         damping: 0.05,
         velocityIterations: 8,
         positionIterations: 8,
@@ -1053,6 +1062,42 @@ export class CornholeSceneService {
       cfg.set_kKHR(1.0);
       cfg.set_kSHR(1.0);
     }
+    const mats = body?.get_m_materials?.();
+    if (mats?.size?.() > 0) {
+      const mat = mats.at(0);
+      mat.set_m_kAST(0.88);
+      mat.set_m_kVST(0.55);
+    }
+    this.captureBagRestPose();
+  }
+
+  /** COM-relative rest offsets in Ammo space (activation pose = flat sack at release). */
+  private captureBagRestPose(): void {
+    const nodes = this.softNodes();
+    if (!nodes) {
+      this.bagRestRelativeAmmo = null;
+      return;
+    }
+    const count = nodes.size();
+    if (count === 0) {
+      this.bagRestRelativeAmmo = null;
+      return;
+    }
+    let cx = 0, cy = 0, cz = 0;
+    for (let i = 0; i < count; i++) {
+      const p = nodes.at(i).get_m_x();
+      cx += p.x(); cy += p.y(); cz += p.z();
+    }
+    const inv = 1 / count;
+    cx *= inv; cy *= inv; cz *= inv;
+    const buf = new Float32Array(count * 3);
+    for (let i = 0; i < count; i++) {
+      const p = nodes.at(i).get_m_x();
+      buf[i * 3] = p.x() - cx;
+      buf[i * 3 + 1] = p.y() - cy;
+      buf[i * 3 + 2] = p.z() - cz;
+    }
+    this.bagRestRelativeAmmo = buf;
   }
 
   /**
@@ -1061,6 +1106,7 @@ export class CornholeSceneService {
    */
   private resetBagPosition(): void {
     if (!this.scene) return;
+    this.bagRestRelativeAmmo = null;
     if (this.bag) {
       const p = this.bagWorldCenter();
       const lz = p.z - CORNHOLE.boardWorld.z;
@@ -1503,6 +1549,104 @@ export class CornholeSceneService {
       return 0.4 + t(this.gameState.stickSpeed) * 0.22;
     }
     return 0.58 + t(this.gameState.slickSpeed) * 0.32;
+  }
+
+  /**
+   * Nudge the soft body toward its flat rest pose on open lawn only.
+   * Skipped when any node is on the board deck or on a settled bag so edge hangs
+   * and stacked / angled rests stay plausible.
+   */
+  private relaxBagOnGround(): void {
+    if (!this.evaluating || this.firstContactMs === 0 || !this.bagRestRelativeAmmo) return;
+    const nodes = this.softNodes();
+    const rest = this.bagRestRelativeAmmo;
+    if (!nodes || nodes.size() === 0 || rest.length < nodes.size() * 3) return;
+    const count = nodes.size();
+
+    const by = CORNHOLE.boardWorld.y;
+    const bx = CORNHOLE.boardWorld.x;
+    const bzAmmo = -CORNHOLE.boardWorld.z;
+    const halfW = CORNHOLE.board.widthM / 2;
+    const halfL = CORNHOLE.board.lengthM / 2;
+    const halfT = CORNHOLE.board.thicknessM / 2;
+    const sinT = Math.sin(CORNHOLE.boardTiltRad);
+    const cosT = Math.cos(CORNHOLE.boardTiltRad);
+    const holeZAmmo = -(CORNHOLE.boardWorld.z + CORNHOLE.board.holeCenterZLocal);
+    const holeR2 = CORNHOLE.board.holeRadiusM * CORNHOLE.board.holeRadiusM;
+
+    let comPx = 0, comPz = 0;
+    for (let j = 0; j < count; j++) {
+      const p = nodes.at(j).get_m_x();
+      comPx += p.x(); comPz += p.z();
+    }
+    const invN = 1 / count;
+    comPx *= invN; comPz *= invN;
+    const comDx = comPx - bx;
+    const comHz = comPz - holeZAmmo;
+    const comOutsideHoleOpening = comDx * comDx + comHz * comHz > holeR2;
+
+    for (let i = 0; i < count; i++) {
+      const pos = nodes.at(i).get_m_x();
+      const px = pos.x(), py = pos.y(), pz = pos.z();
+      const dx = px - bx;
+      const dz = pz - bzAmmo;
+      const localZ = -dz;
+      const surfY = by + localZ * sinT + halfT * cosT;
+      if (Math.abs(dx) <= halfW && Math.abs(dz) <= halfL && py < surfY && py > surfY - 0.35) {
+        const hx = px - bx;
+        const hz = pz - holeZAmmo;
+        const nodeInHole = hx * hx + hz * hz <= holeR2;
+        if (comOutsideHoleOpening || !nodeInHole) return;
+      }
+    }
+
+    for (const settled of this.settledBags) {
+      settled.refreshBoundingInfo();
+      const bb = settled.getBoundingInfo().boundingBox;
+      const sMinX = bb.minimumWorld.x;
+      const sMaxX = bb.maximumWorld.x;
+      const sMinZ = -bb.maximumWorld.z;
+      const sMaxZ = -bb.minimumWorld.z;
+      const sTopY = bb.maximumWorld.y;
+
+      for (let i = 0; i < count; i++) {
+        const pos = nodes.at(i).get_m_x();
+        const px = pos.x(), py = pos.y(), pz = pos.z();
+        if (px >= sMinX && px <= sMaxX && pz >= sMinZ && pz <= sMaxZ
+            && py < sTopY && py > sTopY - 0.12) {
+          return;
+        }
+      }
+    }
+
+    const motion = this.getSoftMotion();
+    if (motion.lin > 0.38 || motion.ang > 0.42) return;
+    if (performance.now() - this.firstContactMs < 420) return;
+
+    let cx = 0, cy = 0, cz = 0;
+    for (let i = 0; i < count; i++) {
+      const p = nodes.at(i).get_m_x();
+      cx += p.x(); cy += p.y(); cz += p.z();
+    }
+    cx *= invN; cy *= invN; cz *= invN;
+
+    const alpha = 0.032;
+    const vd = 1 - alpha * 0.45;
+    for (let i = 0; i < count; i++) {
+      const pos = nodes.at(i).get_m_x();
+      const tx = cx + rest[i * 3];
+      const ty = cy + rest[i * 3 + 1];
+      const tz = cz + rest[i * 3 + 2];
+      pos.setX(pos.x() + (tx - pos.x()) * alpha);
+      pos.setY(pos.y() + (ty - pos.y()) * alpha);
+      pos.setZ(pos.z() + (tz - pos.z()) * alpha);
+      const vel = nodes.at(i).get_m_v();
+      vel.setX(vel.x() * vd);
+      vel.setY(vel.y() * vd);
+      vel.setZ(vel.z() * vd);
+    }
+    const body = this.bag?.physicsImpostor?.physicsBody as { activate?: (v: boolean) => void } | undefined;
+    body?.activate?.(true);
   }
 
   /**
