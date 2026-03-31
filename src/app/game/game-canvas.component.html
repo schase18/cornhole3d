@@ -9,15 +9,21 @@
         <span class="label">Score</span>
         <span class="value">{{ state.totalScore }}</span>
       </div>
-      <div class="hud-row">
+      <div
+        class="hud-row"
+        [class.hud-row--flash-in]="state.scoreboardFlashRow === 'in'">
         <span class="label">In</span>
         <span class="value">{{ state.bagsIn }}</span>
       </div>
-      <div class="hud-row">
+      <div
+        class="hud-row"
+        [class.hud-row--flash-on]="state.scoreboardFlashRow === 'on'">
         <span class="label">On</span>
         <span class="value">{{ state.bagsOn }}</span>
       </div>
-      <div class="hud-row">
+      <div
+        class="hud-row"
+        [class.hud-row--flash-off]="state.scoreboardFlashRow === 'off'">
         <span class="label">Off</span>
         <span class="value">{{ state.bagsOff }}</span>
       </div>

@@ -11,6 +11,7 @@ import { Camera } from '@babylonjs/core/Cameras/camera';
 import { UniversalCamera } from '@babylonjs/core/Cameras/universalCamera';
 import { HemisphericLight } from '@babylonjs/core/Lights/hemisphericLight';
 import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder';
+import { AbstractMesh } from '@babylonjs/core/Meshes/abstractMesh';
 import { Mesh } from '@babylonjs/core/Meshes/mesh';
 import { TransformNode } from '@babylonjs/core/Meshes/transformNode';
 import { CSG } from '@babylonjs/core/Meshes/csg';
@@ -23,6 +24,7 @@ import type { ICanvasRenderingContext } from '@babylonjs/core/Engines/ICanvas';
 import { PhysicsImpostor } from '@babylonjs/core/Physics/v1/physicsImpostor';
 import { AmmoJSPlugin } from '@babylonjs/core/Physics/v1/Plugins/ammoJSPlugin';
 import {
+  boardBackEdgeWorldZ,
   CORNHOLE,
   MAX_THROW_HORIZ_SPEED_MPS,
   PULL_DISTANCE_FOR_FULL_POWER_M,
@@ -79,6 +81,8 @@ export class CornholeSceneService {
   private calmStreak = 0;
   private maxLinSeen = 0;
   private nextThrowResetTimer: ReturnType<typeof setTimeout> | null = null;
+  private holeBonusFlashMesh: Mesh | null = null;
+  private holeBonusFlashClearTimer: ReturnType<typeof setTimeout> | null = null;
   private canvas: HTMLCanvasElement | null = null;
   private detachCanvasPointers: (() => void) | null = null;
   /** Resolved Ammo WASM module — needed for btVector3 construction and destroy(). */
@@ -89,6 +93,9 @@ export class CornholeSceneService {
   private readonly scratchNextTarget = new Vector3();
   private readonly scratchCamTarget = new Vector3();
   private readonly scratchBagCenter = new Vector3();
+  private readonly scratchClampedBag = new Vector3();
+  /** Low-pass of bag COM for flight camera (raw soft-body average can spike on impact). */
+  private readonly smoothedFollowPos = new Vector3(0, 0.92, 0);
 
   private flipFrom = Quaternion.Identity();
   private flipTo = Quaternion.Identity();
@@ -148,7 +155,9 @@ export class CornholeSceneService {
     this.createGround(scene);
     this.createTreeline(scene);
     this.createBoard(scene);
+    this.createHoleBonusFlash(scene);
     this.buildBagMesh(scene);
+    this.syncSmoothedFollowFromBag();
 
     scene.onAfterPhysicsObservable.add(() => {
       this.enforceCollisions();
@@ -223,6 +232,11 @@ export class CornholeSceneService {
       clearTimeout(this.nextThrowResetTimer);
       this.nextThrowResetTimer = null;
     }
+    if (this.holeBonusFlashClearTimer !== null) {
+      clearTimeout(this.holeBonusFlashClearTimer);
+      this.holeBonusFlashClearTimer = null;
+    }
+    this.holeBonusFlashMesh = null;
     this.detachCanvasPointers?.();
     this.detachCanvasPointers = null;
     this.canvas = null;
@@ -255,6 +269,13 @@ export class CornholeSceneService {
       clearTimeout(this.nextThrowResetTimer);
       this.nextThrowResetTimer = null;
     }
+    if (this.holeBonusFlashClearTimer !== null) {
+      clearTimeout(this.holeBonusFlashClearTimer);
+      this.holeBonusFlashClearTimer = null;
+    }
+    if (this.holeBonusFlashMesh) {
+      this.holeBonusFlashMesh.isVisible = false;
+    }
     this.dragging = false;
     this.pointerTrail = [];
 
@@ -279,6 +300,7 @@ export class CornholeSceneService {
     this.calmStreak = 0;
     this.maxLinSeen = 0;
     this.flipStartMs = 0;
+    this.syncSmoothedFollowFromBag();
     this.resetCameraToDefault();
   }
 
@@ -649,6 +671,59 @@ export class CornholeSceneService {
     }
   }
 
+  /** Billboard “+3” behind the far edge of the board; see `showHoleBonusFlash`. */
+  private createHoleBonusFlash(scene: Scene): void {
+    const plane = MeshBuilder.CreatePlane('holeBonusFlash', { width: 1.15, height: 0.52 }, scene);
+    const tex = new DynamicTexture('holeBonusTex', { width: 512, height: 256 }, scene, true);
+    const ctx = tex.getContext() as CanvasRenderingContext2D;
+    ctx.clearRect(0, 0, 512, 256);
+    ctx.font = 'bold 132px system-ui,sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.strokeStyle = 'rgba(25,35,20,0.92)';
+    ctx.lineWidth = 12;
+    ctx.fillStyle = 'rgba(255,230,95,0.97)';
+    ctx.strokeText('+3', 256, 128);
+    ctx.fillText('+3', 256, 128);
+    tex.update();
+    tex.hasAlpha = true;
+
+    const mat = new StandardMaterial('holeBonusMat', scene);
+    mat.diffuseTexture = tex;
+    mat.emissiveTexture = tex;
+    mat.emissiveColor = new Color3(1, 1, 1);
+    mat.disableLighting = true;
+    mat.useAlphaFromDiffuseTexture = true;
+    mat.backFaceCulling = false;
+    plane.material = mat;
+    plane.billboardMode = AbstractMesh.BILLBOARDMODE_ALL;
+
+    const behindZ = boardBackEdgeWorldZ() + 0.5;
+    plane.position.set(CORNHOLE.boardWorld.x, 1.32, behindZ);
+    plane.isPickable = false;
+    plane.isVisible = false;
+    this.holeBonusFlashMesh = plane;
+  }
+
+  private showHoleBonusFlash(): void {
+    const mesh = this.holeBonusFlashMesh;
+    if (!mesh || mesh.isDisposed()) return;
+    if (this.holeBonusFlashClearTimer !== null) {
+      clearTimeout(this.holeBonusFlashClearTimer);
+      this.holeBonusFlashClearTimer = null;
+    }
+    mesh.isVisible = true;
+    const mat = mesh.material as StandardMaterial | null;
+    if (mat) mat.alpha = 1;
+
+    this.holeBonusFlashClearTimer = setTimeout(() => {
+      this.holeBonusFlashClearTimer = null;
+      if (!mesh.isDisposed()) {
+        mesh.isVisible = false;
+      }
+    }, 1000);
+  }
+
   private createWoodGrainTexture(scene: Scene): DynamicTexture {
     const size = 512;
     const tex = new DynamicTexture('woodGrain', { width: size, height: size }, scene, true);
@@ -703,7 +778,7 @@ export class CornholeSceneService {
       m.isVisible = false;
       m.isPickable = false;
       m.physicsImpostor = new PhysicsImpostor(m, PhysicsImpostor.BoxImpostor,
-        { mass: 0, friction: 0.38, restitution: 0.02 }, scene);
+        { mass: 0, friction: 0.06, restitution: 0.02 }, scene);
     };
 
     const boardW = CORNHOLE.board.widthM;
@@ -1009,6 +1084,7 @@ export class CornholeSceneService {
     this.firstContactMs = 0;
     this.calmStreak = 0;
     this.maxLinSeen = 0;
+    this.syncSmoothedFollowFromBag();
     this.resetCameraToDefault();
   }
 
@@ -1145,9 +1221,37 @@ export class CornholeSceneService {
     this.camera.setTarget(DEFAULT_CAM_TARGET.clone());
   }
 
-  private applyBagFollowCamera(smooth: number): void {
+  /** Clamp COM used for camera; reject NaN/Inf and wild spikes from soft-body contact. */
+  private clampedBagPosForCamera(raw: Vector3): Vector3 {
+    const o = this.scratchClampedBag;
+    let x = raw.x, y = raw.y, z = raw.z;
+    if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) {
+      o.copyFrom(this.smoothedFollowPos);
+      return o;
+    }
+    o.set(
+      Math.max(-3.5, Math.min(3.5, x)),
+      Math.max(-0.5, Math.min(18, y)),
+      Math.max(-2, Math.min(24, z)),
+    );
+    return o;
+  }
+
+  private syncSmoothedFollowFromBag(): void {
+    if (!this.bag) return;
+    this.smoothedFollowPos.copyFrom(this.clampedBagPosForCamera(this.bagWorldCenter()));
+  }
+
+  private applyBagFollowCamera(cameraSmooth: number): void {
     if (!this.camera || !this.bag) return;
-    const bagPos = this.bagWorldCenter();
+    const clamped = this.clampedBagPosForCamera(this.bagWorldCenter());
+    if (cameraSmooth >= 0.99) {
+      this.smoothedFollowPos.copyFrom(clamped);
+    } else {
+      const trackAlpha = this.firstContactMs > 0 ? 0.1 : 0.5;
+      Vector3.LerpToRef(this.smoothedFollowPos, clamped, trackAlpha, this.smoothedFollowPos);
+    }
+    const bagPos = this.smoothedFollowPos;
     const arcBoost = Math.min(1.15, Math.max(0, bagPos.y - 0.42) * 0.58);
     const clampedX = bagPos.x * 0.15;
     this.scratchDesiredCam.set(
@@ -1156,11 +1260,11 @@ export class CornholeSceneService {
       bagPos.z + FLIGHT_FOLLOW_OFFSET.z,
     );
     this.scratchFocus.set(clampedX, bagPos.y + 0.04, bagPos.z);
-    Vector3.LerpToRef(this.camera.position, this.scratchDesiredCam, smooth, this.camera.position);
+    Vector3.LerpToRef(this.camera.position, this.scratchDesiredCam, cameraSmooth, this.camera.position);
     this.scratchCamTarget.copyFrom(this.camera.getTarget());
-    Vector3.LerpToRef(this.scratchCamTarget, this.scratchFocus, smooth, this.scratchNextTarget);
+    Vector3.LerpToRef(this.scratchCamTarget, this.scratchFocus, cameraSmooth, this.scratchNextTarget);
     this.camera.setTarget(this.scratchNextTarget);
-    if (smooth >= 0.99) this.camera.fov = FLIGHT_CAM_FOV;
+    if (cameraSmooth >= 0.99) this.camera.fov = FLIGHT_CAM_FOV;
     else this.camera.fov += (FLIGHT_CAM_FOV - this.camera.fov) * 0.14;
   }
 
@@ -1330,7 +1434,7 @@ export class CornholeSceneService {
     let horizSpeed =
       (16.0 + pullT * 7.5 + (1 - loftT) * 5.5) * speedMul;
     horizSpeed = Math.min(horizSpeed, MAX_THROW_HORIZ_SPEED_MPS);
-    const LOFT_MIN_FT = 6;
+    const LOFT_MIN_FT = 5;
     const LOFT_MAX_FT = 16;
     const peakM = (LOFT_MIN_FT + this.gameState.loftT * (LOFT_MAX_FT - LOFT_MIN_FT)) * 0.3048;
     const highLoftEnergyMul = 1 + 0.07 * loftT;
@@ -1372,6 +1476,10 @@ export class CornholeSceneService {
     if (outOfWorld || elapsed >= 10000) result = 'miss';
     this.settledHandled = true;
     this.evaluating = false;
+
+    if (result === 'in_hole') {
+      this.showHoleBonusFlash();
+    }
 
     this.zone.run(() => this.gameState.recordSettledResult(result));
 
@@ -1424,11 +1532,32 @@ export class CornholeSceneService {
     const holeR2 = CORNHOLE.board.holeRadiusM * CORNHOLE.board.holeRadiusM;
     const SLIDE_DAMP = this.slideDampForBagSide();
     /** More tangential retention than ground — less slide damping on the deck only. */
-    const BOARD_SLIDE_DAMP = Math.min(0.97, SLIDE_DAMP + (1 - SLIDE_DAMP) * 0.32);
+    const BOARD_SLIDE_DAMP = Math.min(0.995, SLIDE_DAMP + (1 - SLIDE_DAMP) * 0.72);
     const STATIC_FRICTION_SPEED = 0.5;
+    /** Deck / settled bags: smaller stick zone so low-speed sliding isn’t killed. */
+    const BOARD_STATIC_FRICTION_SPEED = 0.12;
     const POST_CONTACT_MAX_UP_VEL = 0.4;
     const BAG_BOUNCE_MAX_VEL = 1.73;
     let touched = false;
+
+    let comPx = 0, comPz = 0;
+    for (let j = 0; j < count; j++) {
+      const p = nodes.at(j).get_m_x();
+      comPx += p.x();
+      comPz += p.z();
+    }
+    const invN = 1 / count;
+    comPx *= invN;
+    comPz *= invN;
+    const comDx = comPx - bx;
+    const comHz = comPz - holeZAmmo;
+    const comDist2 = comDx * comDx + comHz * comHz;
+    /**
+     * If COM is outside the hole opening, treat the whole bag as resting on the deck:
+     * per-node “inside hole cylinder” would otherwise leave rim nodes unsupported so
+     * the bag falls through (e.g. logo area while part of the mesh overlaps the hole).
+     */
+    const comOutsideHoleOpening = comDist2 > holeR2;
 
     for (let i = 0; i < count; i++) {
       const node = nodes.at(i);
@@ -1450,10 +1579,11 @@ export class CornholeSceneService {
       if (Math.abs(dx) <= halfW && Math.abs(dz) <= halfL && py < surfY && py > surfY - 0.35) {
         const hx = px - bx;
         const hz = pz - holeZAmmo;
-        if (hx * hx + hz * hz > holeR2) {
+        const nodeInHole = hx * hx + hz * hz <= holeR2;
+        if (comOutsideHoleOpening || !nodeInHole) {
           pos.setY(surfY);
           vel.setY(0);
-          this.applyFriction(vel, BOARD_SLIDE_DAMP, STATIC_FRICTION_SPEED);
+          this.applyFriction(vel, BOARD_SLIDE_DAMP, BOARD_STATIC_FRICTION_SPEED);
           touched = true;
         }
       }
@@ -1480,7 +1610,7 @@ export class CornholeSceneService {
           pos.setY(sTopY);
           if (vel.y() < 0) vel.setY(0);
           if (vel.y() > BAG_BOUNCE_MAX_VEL) vel.setY(BAG_BOUNCE_MAX_VEL);
-          this.applyFriction(vel, BOARD_SLIDE_DAMP, STATIC_FRICTION_SPEED);
+          this.applyFriction(vel, BOARD_SLIDE_DAMP, BOARD_STATIC_FRICTION_SPEED);
           touched = true;
         }
       }
@@ -1551,12 +1681,18 @@ export class CornholeSceneService {
     const onBoardXZ =
       Math.abs(lx) <= halfW + 0.04 && lz >= -halfL - 0.04 && lz <= halfL + 0.04;
     const nearGround = p.y < CORNHOLE.bag.thicknessM * 2.5;
-    const inHoleRadius = holeDist < CORNHOLE.board.holeRadiusM + 0.02;
+    /** Soft-body COM can sit off-center; slightly generous hole cylinder. */
+    const inHoleRadius = holeDist < CORNHOLE.board.holeRadiusM + 0.045;
 
     const surfY = by + lz * Math.sin(tilt) + (thicknessM / 2) * Math.cos(tilt);
     const onBoardY = p.y > surfY - 0.06 && p.y < surfY + 0.2;
 
-    if (nearGround && inHoleRadius) return 'in_hole';
+    /**
+     * In hole: over the hole in XZ and either on the deck in that band (not only
+     * when COM has fallen to the lawn — the old nearGround-only rule missed
+     * settled bags still above the grass).
+     */
+    if (inHoleRadius && (nearGround || onBoardY)) return 'in_hole';
     if (onBoardY && onBoardXZ) return 'on_board';
     return 'miss';
   }

@@ -57,6 +57,35 @@
   justify-content: space-between;
   gap: 1.5rem;
   margin-bottom: 0.35rem;
+  border-radius: 6px;
+  transition: background 0.2s ease, box-shadow 0.2s ease;
+}
+
+.hud-row--flash-in {
+  margin-left: -0.4rem;
+  margin-right: -0.4rem;
+  padding: 0.28rem 0.4rem 0.32rem;
+  margin-bottom: 0.35rem;
+  background: rgba(55, 175, 105, 0.38);
+  box-shadow: inset 0 0 0 1px rgba(130, 230, 170, 0.55);
+}
+
+.hud-row--flash-on {
+  margin-left: -0.4rem;
+  margin-right: -0.4rem;
+  padding: 0.28rem 0.4rem 0.32rem;
+  margin-bottom: 0.35rem;
+  background: rgba(220, 155, 55, 0.38);
+  box-shadow: inset 0 0 0 1px rgba(255, 210, 120, 0.5);
+}
+
+.hud-row--flash-off {
+  margin-left: -0.4rem;
+  margin-right: -0.4rem;
+  padding: 0.28rem 0.4rem 0.32rem;
+  margin-bottom: 0.35rem;
+  background: rgba(130, 145, 175, 0.35);
+  box-shadow: inset 0 0 0 1px rgba(170, 185, 215, 0.5);
 }
 
 .label {

@@ -14,12 +14,17 @@ export interface GameStateSnapshot {
   lastResult: ThrowResult | null;
   lastMessage: string;
   canThrow: boolean;
+  /** Brief HUD row highlight after a scoring throw. */
+  scoreboardFlashRow: 'in' | 'on' | 'off' | null;
 }
 
 const BAGS_PER_ROUND = 4;
+const SCOREBOARD_FLASH_MS = 2000;
 
 @Injectable({ providedIn: 'root' })
 export class GameStateService {
+  private scoreboardFlashClearTimer: ReturnType<typeof setTimeout> | null = null;
+
   private readonly stateSubject = new BehaviorSubject<GameStateSnapshot>({
     totalScore: 0,
     bagsIn: 0,
@@ -30,6 +35,7 @@ export class GameStateService {
     lastResult: null,
     lastMessage: 'Drag on the lawn, release to throw.',
     canThrow: true,
+    scoreboardFlashRow: null,
   });
 
   readonly state$ = this.stateSubject.asObservable();
@@ -42,7 +48,7 @@ export class GameStateService {
   /** 1–10: how the slick side slides (higher = more run). */
   slickSpeed = 8;
 
-  /** 0 = Low (6 ft peak), 1 = High (16 ft peak). */
+  /** 0 = Low (5 ft peak), 1 = High (16 ft peak). */
   loftT = 0.5;
 
   get snapshot(): GameStateSnapshot {
@@ -95,6 +101,13 @@ export class GameStateService {
       round += 1;
       lastMessage = `${msg} End of round — rack reset.`;
     }
+
+    const scoreboardFlashRow: 'in' | 'on' | 'off' | null =
+      result === 'in_hole' ? 'in'
+        : result === 'on_board' ? 'on'
+          : 'off';
+
+    this.clearScoreboardFlashTimer();
     this.stateSubject.next({
       totalScore,
       bagsIn,
@@ -106,7 +119,15 @@ export class GameStateService {
       lastMessage,
       /** Scene resets the bag after a short delay; re-enabled via prepareNextThrow(). */
       canThrow: false,
+      scoreboardFlashRow,
     });
+
+    if (scoreboardFlashRow !== null) {
+      this.scoreboardFlashClearTimer = setTimeout(() => {
+        this.scoreboardFlashClearTimer = null;
+        this.patch({ scoreboardFlashRow: null });
+      }, SCOREBOARD_FLASH_MS);
+    }
   }
 
   /** Call after the bag is moved back to the throw line so the player can throw again. */
@@ -119,6 +140,7 @@ export class GameStateService {
 
   /** Clear score counters and restore a fresh round (used by Reset). */
   resetGame(): void {
+    this.clearScoreboardFlashTimer();
     this.stateSubject.next({
       totalScore: 0,
       bagsIn: 0,
@@ -129,7 +151,15 @@ export class GameStateService {
       lastResult: null,
       lastMessage: 'Drag on the lawn, release to throw.',
       canThrow: true,
+      scoreboardFlashRow: null,
     });
+  }
+
+  private clearScoreboardFlashTimer(): void {
+    if (this.scoreboardFlashClearTimer !== null) {
+      clearTimeout(this.scoreboardFlashClearTimer);
+      this.scoreboardFlashClearTimer = null;
+    }
   }
 
   private patch(partial: Partial<GameStateSnapshot>): void {
